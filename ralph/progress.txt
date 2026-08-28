@@ -27,6 +27,8 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
 - Side effects fired from a route handler go out as `void fn().catch(console.error)` so they can never fail the request; any timer they set must be `.unref()`ed or `node --test` hangs.
 - Functions that talk to the outside world take the transport as an injectable last arg with a real default (`notify(token, send = sendGrid)`, `selectorFor(el, isUnique)`) — that is how this repo tests without network or DOM.
 - Env vars so far: `DATABASE_PATH`, `PREVIEW_OVERRIDE`, `SENDGRID_API_KEY`, `NOTIFY_EMAIL`, `NOTIFY_FROM` (optional), `APP_URL` (optional, for links in emails).
+- Admin-style CRUD uses server actions, not API routes: `<form action={fn}>` + `FormData`, logic in `lib/*.ts`, thin `'use server'` wrappers in `app/*/actions.ts`. Errors redirect to `?error=...` (no `useActionState`). `redirect()` throws NEXT_REDIRECT so it must never sit inside a swallowing `try`.
+- Next 16 page `searchParams` is a Promise, same as `params` — always await it.
 - `next dev` auto-generates root `AGENTS.md` (nextjs-agent-rules block) and `CLAUDE.md` (`@AGENTS.md`). They are committed — deleting them just recreates the diff.
 
 ## 2026-08-28 - US-001
@@ -160,4 +162,20 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   - `notify(token, send)` takes the sender as an injectable arg (same trick as `selectorFor`'s uniqueness oracle) — that is the whole reason it is testable without network.
   - Any background timer in this app must be `.unref()`ed or `node --test` hangs at the end of the run.
   - Debounce state is per **token**, batch state is per **comment** — both are needed. Only `last_notified_at` would lose comments; only `notified_at` would spam.
+---
+
+## 2026-08-28 - US-010
+- Added `lib/admin.ts`: `listProjects()` (projects + per-project open/total comment counts via correlated subqueries, each with its tokens), `createProject` (trim-validates all four fields, 409 on duplicate slug), `mintToken` (`randomBytes(6).toString('base64url')` = 8 chars), `revokeToken` (sets `revoked_at`, 404 if unknown/already revoked). Reuses `ApiError` from `lib/comments.ts`.
+- Added `app/admin/page.tsx` (server, `force-dynamic`): project cards with counts, token links (revoked ones struck through), per-project "Generate link" form, and an "Add project" form. No auth code — Cloudflare Access covers the path at the edge.
+- Added `app/admin/actions.ts`: three `'use server'` FormData actions wrapping the lib. All go through one `run()` helper that catches and `redirect('/admin?error=...')`s; success redirects to `/admin`. No `useActionState`, no client state.
+- Added `app/admin/copy.tsx`: 10-line client component, `navigator.clipboard.writeText` + "Copied" for 1.5s.
+- Added `lib/admin.test.ts`: create/duplicate-slug/empty-field, mint (uniqueness + resolvable via `getTokenContext`, unknown project), comment counts including replies, revoke + double-revoke.
+- Files changed: lib/admin.ts, lib/admin.test.ts, app/admin/page.tsx, app/admin/actions.ts, app/admin/copy.tsx, ralph/prd.json, ralph/progress.txt
+- Verified: `pnpm typecheck` clean, `pnpm test` 20/20, `pnpm build` clean. Browser (Playwright Firefox, dev :3801, scratch DB): empty state -> add project -> duplicate slug shows the error banner with the ?error= URL -> generate link -> POST a comment via the API -> counts read "1 open / 1 total" -> Copy shows "Copied" -> Revoke strikes the link through and `/r/{token}` then returns 404.
+- **Learnings for future iterations:**
+  - Server actions are the lazy path for admin-style CRUD here: plain `<form action={fn}>` with `FormData`, no fetch, no client state, works without JS. Only the clipboard button needs `'use client'`.
+  - `redirect()` throws NEXT_REDIRECT, so it must live outside the `try` (or in the `catch`) — never inside a `try` that swallows errors.
+  - Next 16 page `searchParams` is a Promise like `params`; `await` it.
+  - A page with a `searchParams` prop and `force-dynamic` needs no cache plumbing — the post-action redirect re-renders with fresh DB reads, so `revalidatePath`/`refresh` are unnecessary.
+  - `SELECT p.*, (SELECT COUNT(*) ...) AS open_comments` in one statement beats N+1 count queries and keeps the row shape a plain `Project & {counts}`.
 ---
