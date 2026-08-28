@@ -114,8 +114,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Shell loads threads via GET /api/comments, filters to current path, and sends {type:'track'} to embed.js; embed replies with {type:'positions', positions, missing} \u2014 only ids present in positions render. Pins are buttons in an overflow-hidden pointer-events:none overlay layer. ThreadPanel + Compose share popoverLeft(x, frameWidth). SQLite created_at is UTC-naive \u2014 parse with created_at.replace(' ','T')+'Z'."
     },
     {
       "id": "US-008",

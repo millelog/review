@@ -107,3 +107,19 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   - Overlay pins are positioned against a `position: relative` wrapper that is exactly the iframe's box — never against the stage, or the Mobile (390px) width offsets everything.
   - `frameLocator('#preview')` in Playwright works against the fake site; use `page.request.get` for the API assertion so the check runs in one script.
 ---
+
+## 2026-08-28 - US-007
+- Shell now loads existing threads (`GET /api/comments?token=`) on mount and after every write, filters them to the iframe's current path, and sends `{type:'track', pins:[{id,selector,offsetX,offsetY}]}` to embed.js. Track is re-sent on iframe `onLoad` (a full page load clears embed.js's `tracked` array).
+- `positions` messages from embed.js drive an `id -> {x,y}` map; only ids present in that map render, so pins whose selector no longer resolves (embed's `missing` list) silently disappear. Scroll/resize tracking is free — embed.js already rAF-throttles re-reporting.
+- Pins are numbered buttons in an `inset:0; pointer-events:none; overflow:hidden` overlay layer (pins themselves re-enable pointer events), so the iframe stays interactive and off-screen pins don't paint over the header. Change requests are orange, comments rose, open pin gets a dark ring.
+- Clicking a pin opens `ThreadPanel`: root comment + replies with author, local-time timestamp and a "Change request" chip, plus a reply box posting `parent_id`. Escape or Close dismisses; an iframe route change clears it.
+- Extracted `popoverLeft(x, frameWidth)` shared by Compose and ThreadPanel (flips the card left of the anchor near the right edge).
+- Files changed: app/r/[token]/shell.tsx, ralph/prd.json, ralph/progress.txt
+- Verified: `pnpm typecheck` clean, `pnpm test` 15/15, `pnpm build` clean. Browser (Playwright Firefox, dev :3501 + fake site :3502): posted a comment on `#hero h1` and a change request on `[data-block="two"] h2` -> 2 pins rendered at the right spots; opening pin 1 shows author/timestamp/body; reply appears in the thread after posting; Escape closes the panel; scrolling the iframe 200px moved the pin top 145 -> -55 (tracking works); removing `#hero` from the DOM dropped that pin to 1 rendered.
+- **Learnings for future iterations:**
+  - SQLite `datetime('now')` returns UTC with a space separator, which JS parses as *local* time. Always `new Date(created_at.replace(' ', 'T') + 'Z')` before formatting.
+  - The `S` style object's `satisfies` clause needs `((...args: never[]) => React.CSSProperties)` once a style helper takes more than one argument.
+  - An overlay over the iframe must be `pointerEvents:'none'` with `pointerEvents:'auto'` only on the interactive bits, or the preview becomes unclickable.
+  - Anything derived from `threads` that feeds a `toFrame` effect must be `useMemo`'d — a fresh array each render re-posts `track` in a loop.
+  - US-008 hooks: `load()` is already the single refresh path (wire polling to it), `threads` holds every path's roots for the sidebar, and the embed `missing` list is what marks a comment "outdated".
+---

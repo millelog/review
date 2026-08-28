@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CommentType } from '@/lib/db'
+import type { Comment, CommentType } from '@/lib/db'
+import type { Thread } from '@/lib/comments'
 
 const NAME_KEY = 'review:name'
 
@@ -32,6 +33,9 @@ export default function Shell({
   const [commentMode, setCommentMode] = useState(false)
   const [path, setPath] = useState('/')
   const [pending, setPending] = useState<Pending | null>(null)
+  const [threads, setThreads] = useState<Thread[]>([])
+  const [positions, setPositions] = useState<Record<number, { x: number; y: number }>>({})
+  const [openId, setOpenId] = useState<number | null>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
 
   const previewOrigin = useMemo(() => new URL(src).origin, [src])
@@ -48,6 +52,32 @@ export default function Shell({
     setReady(true)
   }, [])
 
+  const load = useCallback(async () => {
+    const res = await fetch(`/api/comments?token=${encodeURIComponent(token)}`)
+    if (res.ok) setThreads((await res.json()).comments)
+  }, [token])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const pins = useMemo(() => threads.filter((t) => t.path === path), [threads, path])
+  const openThread = pins.find((t) => t.id === openId) ?? null
+
+  const sendTrack = useCallback(() => {
+    toFrame({
+      type: 'track',
+      pins: pins.map((t) => ({
+        id: t.id,
+        selector: t.selector,
+        offsetX: t.offset_x,
+        offsetY: t.offset_y,
+      })),
+    })
+  }, [pins, toFrame])
+
+  useEffect(sendTrack, [sendTrack])
+
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       if (e.source !== frameRef.current?.contentWindow || e.origin !== previewOrigin) return
@@ -56,6 +86,7 @@ export default function Shell({
       if (msg.type === 'path') {
         setPath(msg.path)
         setPending(null)
+        setOpenId(null)
       } else if (msg.type === 'click') {
         setPending({
           x: msg.x,
@@ -67,6 +98,10 @@ export default function Shell({
           viewportWidth: msg.viewportWidth,
         })
         setCommentMode(false)
+      } else if (msg.type === 'positions') {
+        const next: Record<number, { x: number; y: number }> = {}
+        for (const p of msg.positions) next[p.id] = { x: p.x, y: p.y }
+        setPositions(next)
       }
     }
     window.addEventListener('message', onMessage)
@@ -78,13 +113,15 @@ export default function Shell({
   }, [commentMode, toFrame])
 
   useEffect(() => {
-    if (!pending) return
+    if (!pending && openId === null) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setPending(null)
+      if (e.key !== 'Escape') return
+      setPending(null)
+      setOpenId(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [pending])
+  }, [pending, openId])
 
   async function save(body: string, type: CommentType) {
     if (!pending || !name) return
@@ -104,6 +141,17 @@ export default function Shell({
       }),
     })
     setPending(null)
+    await load()
+  }
+
+  async function reply(parentId: number, body: string) {
+    if (!name) return
+    await fetch('/api/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, path, author: name, body, parent_id: parentId }),
+    })
+    await load()
   }
 
   return (
@@ -140,8 +188,36 @@ export default function Shell({
             src={src}
             title={`${project} — ${branch}`}
             style={S.frame}
-            onLoad={() => toFrame({ type: 'ping' })}
+            onLoad={() => {
+              toFrame({ type: 'ping' })
+              sendTrack()
+            }}
           />
+          <div style={S.overlayLayer}>
+            {pins.map((t) =>
+              positions[t.id] ? (
+                <button
+                  key={t.id}
+                  data-pin={t.id}
+                  style={S.pinButton(positions[t.id], t.type === 'change_request', openId === t.id)}
+                  onClick={() => setOpenId((id) => (id === t.id ? null : t.id))}
+                >
+                  {pins.indexOf(t) + 1}
+                </button>
+              ) : null,
+            )}
+          </div>
+
+          {openThread && positions[openThread.id] && (
+            <ThreadPanel
+              thread={openThread}
+              at={positions[openThread.id]}
+              width={mobile ? 390 : frameRef.current?.clientWidth || 0}
+              onReply={reply}
+              onClose={() => setOpenId(null)}
+            />
+          )}
+
           {pending && (
             <div style={S.catcher} onClick={() => setPending(null)}>
               <div style={{ ...S.pin, left: pending.x, top: pending.y }} />
@@ -174,9 +250,7 @@ function Compose({
   const [type, setType] = useState<CommentType>('comment')
   const [saving, setSaving] = useState(false)
 
-  // Flip left of the pin when the box would run off the preview's right edge.
-  const flip = pending.x + 20 + 280 > pending.viewportWidth
-  const left = Math.max(8, flip ? pending.x - 288 : pending.x + 20)
+  const left = popoverLeft(pending.x, pending.viewportWidth)
 
   return (
     <form
@@ -218,6 +292,85 @@ function Compose({
         </button>
       </div>
     </form>
+  )
+}
+
+/** Popover sits right of the anchor, flipping left when it would overflow the preview. */
+function popoverLeft(x: number, frameWidth: number) {
+  const flip = x + 20 + 280 > frameWidth
+  return Math.max(8, flip ? x - 288 : x + 20)
+}
+
+function stamp(created: string) {
+  return new Date(created.replace(' ', 'T') + 'Z').toLocaleString()
+}
+
+function ThreadPanel({
+  thread,
+  at,
+  width,
+  onReply,
+  onClose,
+}: {
+  thread: Thread
+  at: { x: number; y: number }
+  width: number
+  onReply: (parentId: number, body: string) => Promise<void>
+  onClose: () => void
+}) {
+  const [body, setBody] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  return (
+    <div
+      style={{ ...S.compose, left: popoverLeft(at.x, width), top: at.y + 12, gap: 10 }}
+      data-thread={thread.id}
+    >
+      <Entry comment={thread} onClose={onClose} />
+      {thread.replies.map((r) => (
+        <Entry key={r.id} comment={r} />
+      ))}
+      <form
+        style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+        onSubmit={async (e) => {
+          e.preventDefault()
+          const trimmed = body.trim()
+          if (!trimmed || saving) return
+          setSaving(true)
+          await onReply(thread.id, trimmed)
+          setBody('')
+          setSaving(false)
+        }}
+      >
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Reply…"
+          style={{ ...S.textarea, minHeight: 44 }}
+        />
+        <button type="submit" style={S.primary} disabled={saving}>
+          Reply
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function Entry({ comment, onClose }: { comment: Comment; onClose?: () => void }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <strong style={{ fontSize: 13 }}>{comment.author}</strong>
+        {comment.type === 'change_request' && <span style={S.chip(true)}>Change request</span>}
+        <span style={{ ...S.branch, fontSize: 11 }}>{stamp(comment.created_at)}</span>
+        {onClose && (
+          <button type="button" style={{ ...S.ghost, marginLeft: 'auto' }} onClick={onClose}>
+            Close
+          </button>
+        )}
+      </div>
+      <p style={{ margin: 0, fontSize: 14, whiteSpace: 'pre-wrap' }}>{comment.body}</p>
+    </div>
   )
 }
 
@@ -289,6 +442,25 @@ const S = {
   frameBox: { position: 'relative', height: '100%' },
   frame: { width: '100%', height: '100%', border: 0, background: '#fff', display: 'block' },
   catcher: { position: 'absolute', inset: 0 },
+  overlayLayer: { position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' },
+  pinButton: (at: { x: number; y: number }, change: boolean, open: boolean) => ({
+    position: 'absolute',
+    left: at.x,
+    top: at.y,
+    marginLeft: -11,
+    marginTop: -11,
+    width: 22,
+    height: 22,
+    padding: 0,
+    borderRadius: '50%',
+    pointerEvents: 'auto',
+    cursor: 'pointer',
+    fontSize: 11,
+    color: '#fff',
+    background: change ? '#f97316' : '#f43f5e',
+    border: open ? '2px solid #111' : '2px solid #fff',
+    boxShadow: '0 1px 4px rgba(0,0,0,.4)',
+  }),
   pin: {
     position: 'absolute',
     width: 14,
@@ -354,4 +526,4 @@ const S = {
     color: '#fff',
     cursor: 'pointer',
   },
-} satisfies Record<string, React.CSSProperties | ((active: boolean) => React.CSSProperties)>
+} satisfies Record<string, React.CSSProperties | ((...args: never[]) => React.CSSProperties)>
