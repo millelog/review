@@ -32,8 +32,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "lib/db.ts: lazy singleton, WAL + foreign_keys on, CREATE TABLE IF NOT EXISTS on first getDb(). Types exported for API stories."
     },
     {
       "id": "US-003",

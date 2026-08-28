@@ -20,3 +20,16 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   - Add `*.tsbuildinfo` to .gitignore (incremental: true generates it).
   - No test files exist yet; `node --test` currently passes vacuously. US-002 adds the first real tests.
 ---
+
+## 2026-08-28 - US-002
+- Added `lib/db.ts`: single lazy `getDb()` singleton opening SQLite at `DATABASE_PATH` (default ./data/review.db), mkdir -p on the dir, WAL + foreign_keys pragmas, and idempotent `CREATE TABLE IF NOT EXISTS` schema for projects/tokens/comments + indexes. Exported `Project`/`Token`/`Comment`/`CommentType`/`CommentStatus` types for later API/UI stories.
+- Comments carry `notified_at` (nullable) for the US-009 email debounce; tokens carry `last_notified_at` and `revoked_at`.
+- Added `lib/db.test.ts` (node:test): inserts project → token → comment into a tmpdir DB and reads back, asserting defaults (status 'open', parent_id/notified_at null) and WAL mode.
+- Enabled `allowImportingTsExtensions` in tsconfig.json (see learnings).
+- Files changed: lib/db.ts, lib/db.test.ts, tsconfig.json, ralph/prd.json, ralph/progress.txt
+- Verified: `pnpm test` 1/1 pass, `pnpm typecheck` clean, `pnpm build` clean.
+- **Learnings for future iterations:**
+  - Node 22 strips TS types natively but does NOT rewrite import specifiers, so test files must import with the literal `.ts` extension (`./db.ts`). That requires `allowImportingTsExtensions: true` in tsconfig (safe under `noEmit`). App/server code should keep using the `@/lib/...` alias — Next resolves that fine.
+  - To point a test at its own DB, set `process.env.DATABASE_PATH` then `await import('./db.ts')` — a top-level static import would run the singleton before the env assignment.
+  - `node --test` warns MODULE_TYPELESS_PACKAGE_JSON on .ts test files; harmless, don't add `"type": "module"` just to silence it.
+---
