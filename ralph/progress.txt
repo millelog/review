@@ -1,0 +1,22 @@
+# Ralph Progress Log
+Started: Fri Aug 28 12:39:35 PM PDT 2026
+---
+
+## Codebase Patterns
+- Stack: Next.js 16 (App Router, Turbopack), React 19, TypeScript 7, pnpm. `pnpm typecheck` = `tsc --noEmit`, `pnpm test` = `node --test` (node built-in test runner, no framework).
+- `better-sqlite3` is native: it must stay in `serverExternalPackages` in next.config.ts and in `pnpm.onlyBuiltDependencies` in package.json, otherwise the bundler/installer breaks it.
+- `output: 'standalone'` — verify a build with `pnpm build && PORT=xxxx node .next/standalone/server.js`.
+- Next rewrites tsconfig.json on build (jsx -> react-jsx, adds .next/dev/types include). Don't fight it; commit the rewritten file.
+- DB path comes from env `DATABASE_PATH` (default ./data/review.db); `data/` is gitignored.
+
+## 2026-08-28 - US-001
+- Scaffolded the Next.js app by hand (no create-next-app): package.json, next.config.ts, tsconfig.json, app/layout.tsx, app/page.tsx placeholder.
+- Installed next/react/react-dom/better-sqlite3 + TS types; approved better-sqlite3 build script via pnpm.onlyBuiltDependencies.
+- Verified: `pnpm typecheck` clean, `pnpm build` clean, standalone server returns 200 with "Review" at /.
+- Files changed: package.json, pnpm-lock.yaml, next.config.ts, tsconfig.json, next-env.d.ts, app/layout.tsx, app/page.tsx, .gitignore
+- **Learnings for future iterations:**
+  - Hand-scaffolding is cleaner than create-next-app here (no eslint/tailwind noise); add tooling only when a story needs it.
+  - better-sqlite3 13 ships prebuilt binaries for node 22, so no compile toolchain issues on this host.
+  - Add `*.tsbuildinfo` to .gitignore (incremental: true generates it).
+  - No test files exist yet; `node --test` currently passes vacuously. US-002 adds the first real tests.
+---

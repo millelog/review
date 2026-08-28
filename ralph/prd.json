@@ -1,7 +1,7 @@
 {
   "project": "Review",
   "branchName": "ralph/review-tool",
-  "description": "Markup.io-style client feedback tool at review.cascadeonline.dev — clients open a token link, see the live Vercel branch preview in an iframe, and pin threaded comments/change requests on elements. No accounts. Full spec: tasks/prd-review-tool.md",
+  "description": "Markup.io-style client feedback tool at review.cascadeonline.dev \u2014 clients open a token link, see the live Vercel branch preview in an iframe, and pin threaded comments/change requests on elements. No accounts. Full spec: tasks/prd-review-tool.md",
   "userStories": [
     {
       "id": "US-001",
@@ -15,8 +15,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Next 16 (Turbopack) + React 19, TS 7. better-sqlite3 in serverExternalPackages."
     },
     {
       "id": "US-002",
@@ -42,7 +42,7 @@
       "acceptanceCriteria": [
         "Served at /embed.js as a static, dependency-free script; immediately no-ops when window.self === window.top",
         "On load, posts current path to parent; reports route changes via pushState/replaceState patch, popstate, hashchange",
-        "When parent enables comment mode, click is intercepted (default prevented): posts computed CSS selector (id, then stable data-* attribute, then structural nth-child path — never class-based), offset within element, and viewport width",
+        "When parent enables comment mode, click is intercepted (default prevented): posts computed CSS selector (id, then stable data-* attribute, then structural nth-child path \u2014 never class-based), offset within element, and viewport width",
         "Given {id, selector}[] from parent, posts each pin's current viewport coordinates; recomputes on scroll and resize, throttled",
         "Posts list of selector ids that fail to resolve",
         "All messages origin-checked; script ignores messages not from the review origin",
@@ -139,7 +139,7 @@
       "description": "As the team, I want a debounced email when clients leave feedback so nothing sits unseen.",
       "acceptanceCriteria": [
         "On comment create: if token's last_notified_at is null or >10 min ago, send email via SendGrid v3 API (plain fetch, no SDK) to env NOTIFY_EMAIL: 'N new comments on {project}/{branch}' with the /r/{token} link, counting all unnotified comments",
-        "Comments created inside the debounce window are included in the next send — no comment is ever silently unnotified",
+        "Comments created inside the debounce window are included in the next send \u2014 no comment is ever silently unnotified",
         "SENDGRID_API_KEY and NOTIFY_EMAIL from env; send failure logs but never blocks comment creation",
         "Tests pass (debounce logic with mocked send: burst of comments yields one email covering all)",
         "Typecheck passes"
