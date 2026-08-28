@@ -145,8 +145,8 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "lib/notify.ts: notify(token, send=sendGrid) \u2014 per-token 10-min debounce via tokens.last_notified_at, batch = comments.notified_at IS NULL. Window is claimed before sending (no double-send); a suppressed or failed run schedules one unref'd trailing setTimeout per token so nothing stays unnotified. Fired from the POST route as void notify(...).catch. Envs: SENDGRID_API_KEY, NOTIFY_EMAIL, optional NOTIFY_FROM + APP_URL."
     },
     {
       "id": "US-010",

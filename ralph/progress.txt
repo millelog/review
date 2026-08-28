@@ -24,6 +24,9 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
 - Shell overlay state that the `message` listener reads must go through a ref (`threadsRef.current = threads` during render); the listener effect only depends on `previewOrigin`, so its closure is created once.
 - Navigate the preview iframe imperatively (`frameRef.current.src = ...`), never via a React `src` prop — React skips writing an unchanged prop, so re-selecting a path the iframe already left is a no-op.
 - Only the *current* path's pins are tracked by embed.js, so its `missing` list is meaningful for that path alone: replace the outdated set on each `positions` message, never accumulate it.
+- Side effects fired from a route handler go out as `void fn().catch(console.error)` so they can never fail the request; any timer they set must be `.unref()`ed or `node --test` hangs.
+- Functions that talk to the outside world take the transport as an injectable last arg with a real default (`notify(token, send = sendGrid)`, `selectorFor(el, isUnique)`) — that is how this repo tests without network or DOM.
+- Env vars so far: `DATABASE_PATH`, `PREVIEW_OVERRIDE`, `SENDGRID_API_KEY`, `NOTIFY_EMAIL`, `NOTIFY_FROM` (optional), `APP_URL` (optional, for links in emails).
 - `next dev` auto-generates root `AGENTS.md` (nextjs-agent-rules block) and `CLAUDE.md` (`@AGENTS.md`). They are committed — deleting them just recreates the diff.
 
 ## 2026-08-28 - US-001
@@ -141,4 +144,20 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   - `iframe onLoad` must clear `positions`/`outdated` and bump a `loadSeq` counter that's in the track effect's deps — a same-path reload leaves `pins` referentially identical, so the effect alone would never re-send `track` to the fresh embed.js instance.
   - Any state read inside the `message` listener (deps `[previewOrigin]`) needs a ref (`threadsRef.current = threads` during render) — the listener closure is created once.
   - The sidebar is a flex sibling of the stage with `flexShrink: 0`; the frame box keeps `width: 100%` and shrinks around it.
+---
+
+## 2026-08-28 - US-009
+- Added `lib/notify.ts`: `notify(token, send = sendGrid)` — per-token 10-minute debounce backed by `tokens.last_notified_at`, batch defined as that token's comments with `notified_at IS NULL`. Subject `N new comment(s) on {project}/{branch}`, body = `{APP_URL}/r/{token}` plus one line per unnotified comment (type, author, path, body).
+- SendGrid v3 via plain `fetch` to `https://api.sendgrid.com/v3/mail/send`, no SDK. Envs: `SENDGRID_API_KEY`, `NOTIFY_EMAIL`, optional `NOTIFY_FROM` (defaults to NOTIFY_EMAIL) and `APP_URL` (defaults to https://review.cascadeonline.dev).
+- The window is claimed (`last_notified_at = now`) *before* the await, so two concurrent creates can't double-send. Comments are marked `notified_at` only after a successful send, so a failed send retries the whole batch next time.
+- No-lost-notification coverage: when a run is suppressed (inside the window) or its send fails, it schedules one `unref()`ed trailing `setTimeout` per token for the remaining window, which re-runs `notify`. `timers` map keeps a burst to a single timer.
+- Fired from `app/api/comments/route.ts` POST as `void notify(comment.token).catch(...)` — never blocks or fails comment creation.
+- Added `lib/notify.test.ts` (4 tests): first comment sends immediately; a 3-comment burst inside the window sends nothing and then one email covering all three once the window expires; empty batch sends nothing; failed send leaves comments unnotified and the next run covers them.
+- Files changed: lib/notify.ts, lib/notify.test.ts, app/api/comments/route.ts, ralph/prd.json, ralph/progress.txt
+- Verified: `pnpm typecheck` clean, `pnpm test` 19/19, `pnpm build` clean. Standalone server on :3711 with no SendGrid env — POST /api/comments still returns 201, logs `notify: send failed ...`, comment left unnotified. With `globalThis.fetch` stubbed: correct v3 payload (personalizations/from/subject/content), 202 -> comment marked `notified_at`.
+- **Learnings for future iterations:**
+  - Tests fake the passage of time with SQL, not a clock injection: `UPDATE tokens SET last_notified_at = datetime('now','-11 minutes')`. Keeps `notify()` free of a now-parameter.
+  - `notify(token, send)` takes the sender as an injectable arg (same trick as `selectorFor`'s uniqueness oracle) — that is the whole reason it is testable without network.
+  - Any background timer in this app must be `.unref()`ed or `node --test` hangs at the end of the run.
+  - Debounce state is per **token**, batch state is per **comment** — both are needed. Only `last_notified_at` would lose comments; only `notified_at` would spam.
 ---
