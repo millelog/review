@@ -176,8 +176,8 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Two-stage node:22-slim Dockerfile (standalone + public/ + .next/static, non-root `node`, /app/data owned by node). docker-compose.yml uses `expose` + named volume `review-data`, no published ports (Traefik routes). Removed pnpm.onlyBuiltDependencies \u2014 it forced a node-gyp build that fails in slim images; better-sqlite3 13 ships N-API prebuilds. Deploy steps in README.md."
     }
   ]
 }

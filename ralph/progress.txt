@@ -4,7 +4,9 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
 
 ## Codebase Patterns
 - Stack: Next.js 16 (App Router, Turbopack), React 19, TypeScript 7, pnpm. `pnpm typecheck` = `tsc --noEmit`, `pnpm test` = `node --test` (node built-in test runner, no framework).
-- `better-sqlite3` is native: it must stay in `serverExternalPackages` in next.config.ts and in `pnpm.onlyBuiltDependencies` in package.json, otherwise the bundler/installer breaks it.
+- `better-sqlite3` is native: it must stay in `serverExternalPackages` in next.config.ts. It must NOT be in
+  `pnpm.onlyBuiltDependencies` — v13 ships N-API prebuilds for every platform, and approving the build script makes
+  pnpm run node-gyp instead, which fails in any image without python3/make/g++ (removed in US-011).
 - `output: 'standalone'` — verify a build with `pnpm build && PORT=xxxx node .next/standalone/server.js`.
 - Next rewrites tsconfig.json on build (jsx -> react-jsx, adds .next/dev/types include). Don't fight it; commit the rewritten file.
 - DB path comes from env `DATABASE_PATH` (default ./data/review.db); `data/` is gitignored.
@@ -29,6 +31,13 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
 - Env vars so far: `DATABASE_PATH`, `PREVIEW_OVERRIDE`, `SENDGRID_API_KEY`, `NOTIFY_EMAIL`, `NOTIFY_FROM` (optional), `APP_URL` (optional, for links in emails).
 - Admin-style CRUD uses server actions, not API routes: `<form action={fn}>` + `FormData`, logic in `lib/*.ts`, thin `'use server'` wrappers in `app/*/actions.ts`. Errors redirect to `?error=...` (no `useActionState`). `redirect()` throws NEXT_REDIRECT so it must never sit inside a swallowing `try`.
 - Next 16 page `searchParams` is a Promise, same as `params` — always await it.
+- Docker: multi-stage `node:22-slim` build; runtime stage copies `.next/standalone`, `.next/static` and `public/`, runs as
+  the image's `node` user, `CMD ["node","server.js"]` with `HOSTNAME=0.0.0.0`. `mkdir /app/data && chown node:node` before
+  `USER node` so the named volume inherits writable ownership.
+- The container's node_modules is the pnpm store layout: `require('better-sqlite3')` from `docker exec node -e` fails.
+  Use the full `/app/node_modules/.pnpm/better-sqlite3@<ver>/node_modules/better-sqlite3` path for one-off container scripts.
+- `docker-compose.yml` uses `expose`, not `ports` — Coolify's Traefik routes to the container; publishing a host port
+  would collide on gpu1. To smoke-test locally, curl the container IP from `docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'`.
 - `next dev` auto-generates root `AGENTS.md` (nextjs-agent-rules block) and `CLAUDE.md` (`@AGENTS.md`). They are committed — deleting them just recreates the diff.
 
 ## 2026-08-28 - US-001
@@ -178,4 +187,20 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   - Next 16 page `searchParams` is a Promise like `params`; `await` it.
   - A page with a `searchParams` prop and `force-dynamic` needs no cache plumbing — the post-action redirect re-renders with fresh DB reads, so `revalidatePath`/`refresh` are unnecessary.
   - `SELECT p.*, (SELECT COUNT(*) ...) AS open_comments` in one statement beats N+1 count queries and keeps the row shape a plain `Project & {counts}`.
+---
+
+## 2026-08-28 - US-011
+- Added `Dockerfile`: two stages on `node:22-slim`. Build stage runs `pnpm install --frozen-lockfile` + `pnpm build`; runtime stage copies `.next/standalone`, `.next/static` and `public/`, creates `/app/data` owned by `node`, and runs `node server.js` as the non-root `node` user with `HOSTNAME=0.0.0.0`, `PORT=3000`, `DATABASE_PATH=/app/data/review.db`.
+- Added `.dockerignore` (node_modules, .next, data, .git, ralph, tasks, logs) so the build context is source only.
+- Added `docker-compose.yml` (`.yml`, per the playbook): one `review` service, `expose: 3000`, named volume `review-data` at `/app/data`, env passthrough for `DATABASE_PATH`, `SENDGRID_API_KEY`, `NOTIFY_EMAIL`, `NOTIFY_FROM`, `APP_URL`.
+- Removed `pnpm.onlyBuiltDependencies` from package.json — see learnings; it was breaking the image build.
+- Added `README.md`: what the tool is, dev commands, env table, docker run, and the 9 manual deploy steps distilled from `homelab-command/docs/playbook-deploy-subdomain.md` (GitHub repo, Coolify project + dockercompose app on `a408so8`, env vars, tunnel ingress `https://localhost:443` + noTLSVerify before the catch-all, proxied CNAME on the cascadeonline.dev zone, path-scoped Access app on `review.cascadeonline.dev/admin`, verification, homelab doc updates).
+- Files changed: Dockerfile, .dockerignore, docker-compose.yml, README.md, package.json, next-env.d.ts, ralph/prd.json, ralph/progress.txt
+- Verified: `pnpm typecheck` clean, `pnpm test` 20/20, `pnpm build` clean. `docker compose up -d --build` -> `/` 200, `/embed.js` 200 `application/javascript`, `/admin` 200 (DB opens on the volume), container `id` = `uid=1000(node)`. Seeded a project+token in the container, POSTed a comment (201), `docker compose restart`, then `GET /api/comments?token=dockertok` returned the comment and `/r/dockertok` returned 200 — volume persistence confirmed.
+- **Learnings for future iterations:**
+  - The `pnpm.onlyBuiltDependencies: ["better-sqlite3"]` approval added in US-001 was actively harmful. better-sqlite3 13 has no `install` script but does have a `binding.gyp`, so approving builds makes pnpm fall back to `node-gyp rebuild`; that needs python3/make/g++, which `node:22-slim` lacks. The package ships `prebuilds/linux-x64.node` (N-API) — with the approval removed, install is a plain untar and the module loads fine. Don't add build toolchains to the image to "fix" this.
+  - Next's file tracing does copy better-sqlite3's `prebuilds/` into `.next/standalone`, so no manual native-module copying is needed in the Dockerfile.
+  - `docker compose exec node -e "require('better-sqlite3')"` cannot resolve the module — standalone output keeps the pnpm `.pnpm/<pkg>@<ver>/node_modules/<pkg>` layout with only next/react/react-dom hoisted. Require the absolute `.pnpm` path.
+  - `expose` (not `ports`) matches the redfin-rental-scraper model and how Coolify/Traefik reach the container. Local verification goes through the container IP.
+  - `next build` rewrites `next-env.d.ts`; it shows up dirty after any build, same as the tsconfig.json rewrite. Commit it.
 ---

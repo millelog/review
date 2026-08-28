@@ -1,0 +1,18 @@
+services:
+  review:
+    build: .
+    container_name: review
+    restart: unless-stopped
+    expose:
+      - "3000"
+    volumes:
+      - review-data:/app/data
+    environment:
+      - DATABASE_PATH=${DATABASE_PATH:-/app/data/review.db}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - NOTIFY_EMAIL=${NOTIFY_EMAIL}
+      - NOTIFY_FROM=${NOTIFY_FROM}
+      - APP_URL=${APP_URL:-https://review.cascadeonline.dev}
+
+volumes:
+  review-data:
