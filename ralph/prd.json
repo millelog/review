@@ -130,8 +130,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Sidebar component in shell.tsx groups roots by path; `outdated` state is replaced per positions message (NOT accumulated) since only the current path is tracked. focusThread sets frameRef.current.src imperatively (React won't re-write an unchanged src prop). iframe onLoad clears positions/outdated and bumps loadSeq so track re-sends after a same-path reload. Polling: setInterval(load, 5000) in the same effect as the initial load."
     },
     {
       "id": "US-009",

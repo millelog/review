@@ -21,6 +21,9 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   cross-origin site (`python3 -m http.server 3402`) whose index.html loads `http://localhost:<devport>/embed.js`.
 - Shell-side postMessage listeners must filter on both `e.source === frameRef.current?.contentWindow` and `e.origin`;
   Next's dev HMR posts to the same window.
+- Shell overlay state that the `message` listener reads must go through a ref (`threadsRef.current = threads` during render); the listener effect only depends on `previewOrigin`, so its closure is created once.
+- Navigate the preview iframe imperatively (`frameRef.current.src = ...`), never via a React `src` prop — React skips writing an unchanged prop, so re-selecting a path the iframe already left is a no-op.
+- Only the *current* path's pins are tracked by embed.js, so its `missing` list is meaningful for that path alone: replace the outdated set on each `positions` message, never accumulate it.
 - `next dev` auto-generates root `AGENTS.md` (nextjs-agent-rules block) and `CLAUDE.md` (`@AGENTS.md`). They are committed — deleting them just recreates the diff.
 
 ## 2026-08-28 - US-001
@@ -122,4 +125,20 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   - An overlay over the iframe must be `pointerEvents:'none'` with `pointerEvents:'auto'` only on the interactive bits, or the preview becomes unclickable.
   - Anything derived from `threads` that feeds a `toFrame` effect must be `useMemo`'d — a fresh array each render re-posts `track` in a loop.
   - US-008 hooks: `load()` is already the single refresh path (wire polling to it), `threads` holds every path's roots for the sidebar, and the embed `missing` list is what marks a comment "outdated".
+---
+
+## 2026-08-28 - US-008
+- Added a `Sidebar` component to `app/r/[token]/shell.tsx`: every root comment across all paths, grouped by path (first-appearance order), each with author, reply count, type chip, status chip, an `outdated` badge when the selector no longer resolves, and a Resolve/Reopen button.
+- Clicking a sidebar item calls `focusThread`: navigates the iframe imperatively (`frameRef.current.src = previewOrigin + t.path`) when the comment lives on another path, flips `showResolved` on if the target is resolved, and sets `openId` so the thread panel opens once positions arrive.
+- Resolve/unresolve: `PATCH /api/comments/{id}` then `load()`. Available from the sidebar and from the thread panel header. Resolved comments are hidden from both the pin overlay and the sidebar behind a "Show resolved" checkbox.
+- Polling: `setInterval(load, 5000)` alongside the initial load — comments from other viewers appear without a refresh.
+- `path` messages no longer blindly clear `openId`; the open thread survives a navigation to its own path (needed for sidebar focus). Uses a `threadsRef` because the message listener effect only depends on `previewOrigin`.
+- Files changed: app/r/[token]/shell.tsx, ralph/prd.json, ralph/progress.txt
+- Verified: `pnpm typecheck` clean, `pnpm test` 15/15, `pnpm build` clean. Browser (Playwright Firefox, dev :3601 + fake 2-page site on :3602, seeded DB with 5 comments incl. one resolved and one with a dead `#ghost` selector): sidebar grouped `/` and `/about.html`; only open, resolvable pins rendered (1,2); the `#ghost` comment got the `outdated` badge; Resolve removed its pin and dropped the count; "Show resolved" brought pins 1,2,4 back; clicking the `/about.html` item navigated the iframe, header path became `/about.html`, pin 5 rendered and its thread panel opened; a comment POSTed out-of-band appeared in the sidebar ~6s later with no reload.
+- **Learnings for future iterations:**
+  - `outdated` must NOT accumulate across paths. Only the current path's pins are tracked, so a stale `track` sent during navigation reports every previous-path pin as missing; accumulating that permanently badges unrelated comments as outdated. Replace the list on each `positions` message instead.
+  - Navigate the iframe with `frameRef.current.src = ...`, not React state. React only writes `src` when the prop value *changes*, so re-selecting a path the iframe had already left would be a no-op with a controlled prop.
+  - `iframe onLoad` must clear `positions`/`outdated` and bump a `loadSeq` counter that's in the track effect's deps — a same-path reload leaves `pins` referentially identical, so the effect alone would never re-send `track` to the fresh embed.js instance.
+  - Any state read inside the `message` listener (deps `[previewOrigin]`) needs a ref (`threadsRef.current = threads` during render) — the listener closure is created once.
+  - The sidebar is a flex sibling of the stage with `flexShrink: 0`; the frame box keeps `width: 100%` and shrinks around it.
 ---

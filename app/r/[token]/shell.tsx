@@ -36,7 +36,11 @@ export default function Shell({
   const [threads, setThreads] = useState<Thread[]>([])
   const [positions, setPositions] = useState<Record<number, { x: number; y: number }>>({})
   const [openId, setOpenId] = useState<number | null>(null)
+  const [outdated, setOutdated] = useState<number[]>([])
+  const [loadSeq, setLoadSeq] = useState(0)
+  const [showResolved, setShowResolved] = useState(false)
   const frameRef = useRef<HTMLIFrameElement>(null)
+  const threadsRef = useRef<Thread[]>([])
 
   const previewOrigin = useMemo(() => new URL(src).origin, [src])
 
@@ -59,9 +63,16 @@ export default function Shell({
 
   useEffect(() => {
     void load()
+    const timer = setInterval(() => void load(), 5000)
+    return () => clearInterval(timer)
   }, [load])
 
-  const pins = useMemo(() => threads.filter((t) => t.path === path), [threads, path])
+  threadsRef.current = threads
+
+  const pins = useMemo(
+    () => threads.filter((t) => t.path === path && (showResolved || t.status === 'open')),
+    [threads, path, showResolved],
+  )
   const openThread = pins.find((t) => t.id === openId) ?? null
 
   const sendTrack = useCallback(() => {
@@ -76,7 +87,7 @@ export default function Shell({
     })
   }, [pins, toFrame])
 
-  useEffect(sendTrack, [sendTrack])
+  useEffect(sendTrack, [sendTrack, loadSeq])
 
   useEffect(() => {
     function onMessage(e: MessageEvent) {
@@ -86,7 +97,9 @@ export default function Shell({
       if (msg.type === 'path') {
         setPath(msg.path)
         setPending(null)
-        setOpenId(null)
+        setOpenId((id) =>
+          id !== null && threadsRef.current.find((t) => t.id === id)?.path === msg.path ? id : null,
+        )
       } else if (msg.type === 'click') {
         setPending({
           x: msg.x,
@@ -102,6 +115,8 @@ export default function Shell({
         const next: Record<number, { x: number; y: number }> = {}
         for (const p of msg.positions) next[p.id] = { x: p.x, y: p.y }
         setPositions(next)
+        // ponytail: only the current path is tracked, so outdated is per-report, not accumulated.
+        setOutdated(msg.missing)
       }
     }
     window.addEventListener('message', onMessage)
@@ -154,6 +169,18 @@ export default function Shell({
     await load()
   }
 
+  async function toggleResolved(id: number) {
+    await fetch(`/api/comments/${id}`, { method: 'PATCH' })
+    await load()
+  }
+
+  /** Sidebar click: navigate the iframe to the comment's path, then highlight its pin. */
+  function focusThread(t: Thread) {
+    if (t.status === 'resolved') setShowResolved(true)
+    if (t.path !== path && frameRef.current) frameRef.current.src = previewOrigin + t.path
+    setOpenId(t.id)
+  }
+
   return (
     <div style={S.page}>
       <header style={S.bar}>
@@ -189,8 +216,10 @@ export default function Shell({
             title={`${project} — ${branch}`}
             style={S.frame}
             onLoad={() => {
+              setPositions({})
+              setOutdated([])
+              setLoadSeq((n) => n + 1)
               toFrame({ type: 'ping' })
-              sendTrack()
             }}
           />
           <div style={S.overlayLayer}>
@@ -214,6 +243,7 @@ export default function Shell({
               at={positions[openThread.id]}
               width={mobile ? 390 : frameRef.current?.clientWidth || 0}
               onReply={reply}
+              onToggleResolved={toggleResolved}
               onClose={() => setOpenId(null)}
             />
           )}
@@ -225,6 +255,16 @@ export default function Shell({
             </div>
           )}
         </div>
+
+        <Sidebar
+          threads={threads}
+          outdated={outdated}
+          openId={openId}
+          showResolved={showResolved}
+          onShowResolved={setShowResolved}
+          onSelect={focusThread}
+          onToggleResolved={toggleResolved}
+        />
       </div>
 
       {ready && !name && <NamePrompt onSubmit={saveName} />}
@@ -310,12 +350,14 @@ function ThreadPanel({
   at,
   width,
   onReply,
+  onToggleResolved,
   onClose,
 }: {
   thread: Thread
   at: { x: number; y: number }
   width: number
   onReply: (parentId: number, body: string) => Promise<void>
+  onToggleResolved: (id: number) => void
   onClose: () => void
 }) {
   const [body, setBody] = useState('')
@@ -326,7 +368,11 @@ function ThreadPanel({
       style={{ ...S.compose, left: popoverLeft(at.x, width), top: at.y + 12, gap: 10 }}
       data-thread={thread.id}
     >
-      <Entry comment={thread} onClose={onClose} />
+      <Entry
+        comment={thread}
+        onClose={onClose}
+        onToggleResolved={() => onToggleResolved(thread.id)}
+      />
       {thread.replies.map((r) => (
         <Entry key={r.id} comment={r} />
       ))}
@@ -356,15 +402,32 @@ function ThreadPanel({
   )
 }
 
-function Entry({ comment, onClose }: { comment: Comment; onClose?: () => void }) {
+function Entry({
+  comment,
+  onClose,
+  onToggleResolved,
+}: {
+  comment: Comment
+  onClose?: () => void
+  onToggleResolved?: () => void
+}) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <strong style={{ fontSize: 13 }}>{comment.author}</strong>
         {comment.type === 'change_request' && <span style={S.chip(true)}>Change request</span>}
         <span style={{ ...S.branch, fontSize: 11 }}>{stamp(comment.created_at)}</span>
+        {onToggleResolved && (
+          <button
+            type="button"
+            style={{ ...S.ghost, marginLeft: 'auto' }}
+            onClick={onToggleResolved}
+          >
+            {comment.status === 'resolved' ? 'Reopen' : 'Resolve'}
+          </button>
+        )}
         {onClose && (
-          <button type="button" style={{ ...S.ghost, marginLeft: 'auto' }} onClick={onClose}>
+          <button type="button" style={S.ghost} onClick={onClose}>
             Close
           </button>
         )}
@@ -400,6 +463,76 @@ function NamePrompt({ onSubmit }: { onSubmit: (name: string) => void }) {
         </button>
       </form>
     </div>
+  )
+}
+
+function Sidebar({
+  threads,
+  outdated,
+  openId,
+  showResolved,
+  onShowResolved,
+  onSelect,
+  onToggleResolved,
+}: {
+  threads: Thread[]
+  outdated: number[]
+  openId: number | null
+  showResolved: boolean
+  onShowResolved: (on: boolean) => void
+  onSelect: (t: Thread) => void
+  onToggleResolved: (id: number) => void
+}) {
+  const visible = threads.filter((t) => showResolved || t.status === 'open')
+  const paths = [...new Set(visible.map((t) => t.path))]
+
+  return (
+    <aside style={S.sidebar}>
+      <div style={S.sidebarHead}>
+        <strong style={{ fontSize: 13 }}>Feedback ({visible.length})</strong>
+        <label style={{ ...S.branch, marginLeft: 'auto', display: 'flex', gap: 4 }}>
+          <input
+            type="checkbox"
+            checked={showResolved}
+            onChange={(e) => onShowResolved(e.target.checked)}
+          />
+          Show resolved
+        </label>
+      </div>
+
+      {visible.length === 0 && <p style={{ ...S.branch, padding: 12 }}>No comments yet.</p>}
+
+      {paths.map((p) => (
+        <section key={p}>
+          <div style={S.group}>{p}</div>
+          {visible
+            .filter((t) => t.path === p)
+            .map((t) => (
+              <div key={t.id} style={S.item(openId === t.id)}>
+                <button type="button" style={S.itemBody} onClick={() => onSelect(t)}>
+                  <span style={{ fontSize: 13 }}>{t.body}</span>
+                  <span style={S.meta}>
+                    {t.author}
+                    {t.replies.length > 0 && ` · ${t.replies.length} repl${t.replies.length === 1 ? 'y' : 'ies'}`}
+                  </span>
+                </button>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                  {t.type === 'change_request' && <span style={S.badge('#f97316')}>Change request</span>}
+                  <span style={S.badge(t.status === 'resolved' ? '#16a34a' : '#64748b')}>{t.status}</span>
+                  {outdated.includes(t.id) && <span style={S.badge('#a16207')}>outdated</span>}
+                  <button
+                    type="button"
+                    style={{ ...S.ghost, marginLeft: 'auto', fontSize: 12 }}
+                    onClick={() => onToggleResolved(t.id)}
+                  >
+                    {t.status === 'resolved' ? 'Reopen' : 'Resolve'}
+                  </button>
+                </div>
+              </div>
+            ))}
+        </section>
+      ))}
+    </aside>
   )
 }
 
@@ -516,6 +649,54 @@ const S = {
     borderRadius: 12,
     width: 320,
   },
+  sidebar: {
+    width: 280,
+    flexShrink: 0,
+    borderLeft: '1px solid #e5e5e5',
+    background: '#fff',
+    overflowY: 'auto',
+  },
+  sidebarHead: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '10px 12px',
+    borderBottom: '1px solid #eee',
+  },
+  group: {
+    padding: '6px 12px',
+    fontSize: 12,
+    color: '#666',
+    background: '#fafafa',
+    borderBottom: '1px solid #eee',
+  },
+  item: (active: boolean) => ({
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+    padding: '8px 12px',
+    borderBottom: '1px solid #f0f0f0',
+    background: active ? '#eef2ff' : '#fff',
+  }),
+  itemBody: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    textAlign: 'left',
+    border: 0,
+    background: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    font: 'inherit',
+  },
+  meta: { fontSize: 11, color: '#666' },
+  badge: (color: string) => ({
+    padding: '2px 6px',
+    fontSize: 11,
+    borderRadius: 999,
+    background: color,
+    color: '#fff',
+  }),
   input: { padding: '8px 10px', fontSize: 15, border: '1px solid #ddd', borderRadius: 6 },
   primary: {
     padding: '8px 10px',
