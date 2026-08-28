@@ -82,8 +82,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "lib/comments.ts holds all logic (createComment/listThreads/toggleStatus + ApiError with .status); routes in app/api/comments/{route.ts,[id]/route.ts} are thin. Comments scoped by project_id+branch, not token."
     },
     {
       "id": "US-006",

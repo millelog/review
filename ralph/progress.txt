@@ -74,3 +74,17 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   - Playwright is NOT a repo dependency; `pnpm exec playwright screenshot --browser firefox` works via the global `@playwright/cli`, but a *scripted* browser check must import the global CJS build by absolute path (`.../.pnpm/playwright@<ver>/node_modules/playwright/index.js`, default import then destructure). NODE_PATH does not work for ESM.
   - To test the shell, seed a scratch DB: `DATABASE_PATH=/tmp/reviewdb/review.db` + a project/token insert, then run `pnpm dev` with the same env.
   - The iframe carries `id="preview"` — US-006/007/008 should postMessage through that element rather than re-querying by tag.
+
+## 2026-08-28 - US-005
+- Added `lib/comments.ts`: `createComment`, `listThreads`, `toggleStatus`, and an `ApiError` carrying an HTTP status. All validation lives here (active-token check via `getTokenContext`, trimmed non-empty author/body, type defaulting to 'comment', parent must exist in the same project+branch) so it is testable without HTTP.
+- Comments are written with the token's `project_id`/`branch` and read back by that scope, so a re-minted token on the same branch sees prior comments.
+- Added `app/api/comments/route.ts` (GET threads by `?token=`, POST create/reply, 201) and `app/api/comments/[id]/route.ts` (PATCH toggles open/resolved).
+- Added `lib/comments.test.ts`: create+thread+resolve round trip, revoked/unknown token rejection, empty body/author rejection, out-of-scope parent and unknown id.
+- Files changed: lib/comments.ts, lib/comments.test.ts, app/api/comments/route.ts, app/api/comments/[id]/route.ts, ralph/prd.json, ralph/progress.txt
+- Verified: `pnpm typecheck` clean, `pnpm test` 15/15, `pnpm build` clean. HTTP smoke test against the standalone server on :3311 with a seeded scratch DB — POST root 201, POST reply nests under the root in GET, empty body 400, revoked token 404 both on POST and GET, PATCH flips resolved -> open.
+- **Learnings for future iterations:**
+  - Node's type-stripping rejects TS **parameter properties** (`constructor(readonly status = 400)`) with ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX. Declare the field and assign in the body instead. Same class of restriction as enums/namespaces.
+  - `RouteContext<'/api/...'>` only exists after Next typegen, so `tsc --noEmit` on a clean tree fails. Type route context inline: `ctx: { params: Promise<{ id: string }> }`.
+  - Non-route lib modules that tests import must use relative `./x.ts` specifiers (not the `@/lib/x` alias) — Turbopack resolves the explicit `.ts` extension fine, so one import style works for both.
+  - better-sqlite3 supports `INSERT ... RETURNING *` / `UPDATE ... RETURNING *` via `.get()` — no second SELECT after a write.
+  - `await request.json().catch(() => ({}))` turns malformed JSON into a normal 400 from field validation instead of a 500.
