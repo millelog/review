@@ -50,8 +50,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "public/embed.js (static, CJS-exportable IIFE so selectorFor is unit-testable). Protocol: parent->{source:'review', type:'comment-mode'|'track'|'ping'}, embed->{source:'review-embed', type:'path'|'click'|'positions'}."
     },
     {
       "id": "US-004",

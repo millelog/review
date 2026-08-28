@@ -8,6 +8,12 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
 - `output: 'standalone'` — verify a build with `pnpm build && PORT=xxxx node .next/standalone/server.js`.
 - Next rewrites tsconfig.json on build (jsx -> react-jsx, adds .next/dev/types include). Don't fight it; commit the rewritten file.
 - DB path comes from env `DATABASE_PATH` (default ./data/review.db); `data/` is gitignored.
+- `public/` is served statically by Next (`/embed.js`), but `output: 'standalone'` does NOT copy `public/` or `.next/static` — the Dockerfile (US-011) must copy both, and local standalone smoke tests need `cp -r public .next/standalone/`.
+- postMessage protocol between shell and embed.js (contract for US-004/006/007/008):
+  - parent -> iframe: `{source:'review', type:'comment-mode', on}` | `{type:'track', pins:[{id,selector,offsetX,offsetY}]}` | `{type:'ping'}` (re-report path)
+  - iframe -> parent: `{source:'review-embed', type:'path', path}` | `{type:'click', selector, offsetX, offsetY, viewportWidth, x, y, path}` | `{type:'positions', positions:[{id,x,y}], missing:[id]}`
+  - Both sides must check origin. embed.js derives the review origin from its own `document.currentScript.src`.
+- To unit-test browser-only files, write them as an IIFE that exports via `module.exports` and returns early when `typeof module === 'object'`; import with `createRequire(import.meta.url)` from the .ts test (avoids TS resolution complaints about untyped .js).
 
 ## 2026-08-28 - US-001
 - Scaffolded the Next.js app by hand (no create-next-app): package.json, next.config.ts, tsconfig.json, app/layout.tsx, app/page.tsx placeholder.
@@ -32,4 +38,20 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   - Node 22 strips TS types natively but does NOT rewrite import specifiers, so test files must import with the literal `.ts` extension (`./db.ts`). That requires `allowImportingTsExtensions: true` in tsconfig (safe under `noEmit`). App/server code should keep using the `@/lib/...` alias — Next resolves that fine.
   - To point a test at its own DB, set `process.env.DATABASE_PATH` then `await import('./db.ts')` — a top-level static import would run the singleton before the env assignment.
   - `node --test` warns MODULE_TYPELESS_PACKAGE_JSON on .ts test files; harmless, don't add `"type": "module"` just to silence it.
+---
+
+## 2026-08-28 - US-003
+- Added `public/embed.js`: dependency-free bridge script served at `/embed.js`. No-ops when `window.self === window.top`; derives the review origin from its own script src and origin-checks every message in both directions.
+- Reports the initial path and route changes (pushState/replaceState monkey-patch, popstate, hashchange), deduped so identical paths aren't re-posted.
+- Comment mode (toggled by the parent) intercepts clicks in the capture phase with preventDefault/stopPropagation and posts selector + in-element offset + viewport width + click coords + path; sets a crosshair cursor.
+- Tracks parent-supplied `{id, selector, offsetX, offsetY}` pins: posts viewport coordinates and a `missing` list of ids whose selector no longer resolves; recomputed on scroll (capture, so nested scrollers count), resize, load and history changes, rAF-throttled.
+- Selector strategy: unique `#id` -> stable `data-*` attribute (framework-generated ones denylisted) -> structural `nth-child` path anchored at the nearest identifiable ancestor. Never class-based.
+- Added `lib/embed.test.ts`: 8 selector-generation cases using plain-object fake elements and an injectable uniqueness oracle — no jsdom dependency.
+- Files changed: public/embed.js, lib/embed.test.ts, ralph/prd.json, ralph/progress.txt
+- Verified: `pnpm test` 9/9 pass, `pnpm typecheck` clean, `pnpm build` clean, standalone server returns 200 `application/javascript` for /embed.js.
+- **Learnings for future iterations:**
+  - `selectorFor(el, isUnique)` takes the uniqueness check as an injectable callback (defaults to `document.querySelectorAll(sel).length === 1`). That is what makes it testable without a DOM — keep it that way.
+  - Standalone output omits `public/`; see Codebase Patterns. This bit once already.
+  - Stale `next-server` processes from earlier iterations linger on ports (3000, 3117). Check `ss -ltnp` before picking a smoke-test port.
+  - The click listener is registered in the capture phase — the reviewed site's own handlers never see the click while comment mode is on.
 ---
