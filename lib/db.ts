@@ -98,3 +98,17 @@ export function getDb(): Database.Database {
   instance = db
   return db
 }
+
+export type TokenContext = Token & Pick<Project, 'name' | 'slug' | 'vercel_project' | 'vercel_team'>
+
+/** Active (non-revoked) token joined with its project; null if unknown or revoked. */
+export function getTokenContext(token: string): TokenContext | null {
+  const row = getDb()
+    .prepare(
+      `SELECT t.*, p.name, p.slug, p.vercel_project, p.vercel_team
+       FROM tokens t JOIN projects p ON p.id = t.project_id
+       WHERE t.token = ? AND t.revoked_at IS NULL`,
+    )
+    .get(token) as TokenContext | undefined
+  return row ?? null
+}

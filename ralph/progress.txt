@@ -14,6 +14,10 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   - iframe -> parent: `{source:'review-embed', type:'path', path}` | `{type:'click', selector, offsetX, offsetY, viewportWidth, x, y, path}` | `{type:'positions', positions:[{id,x,y}], missing:[id]}`
   - Both sides must check origin. embed.js derives the review origin from its own `document.currentScript.src`.
 - To unit-test browser-only files, write them as an IIFE that exports via `module.exports` and returns early when `typeof module === 'object'`; import with `createRequire(import.meta.url)` from the .ts test (avoids TS resolution complaints about untyped .js).
+- Server components/routes that call `getDb()` must `export const dynamic = 'force-dynamic'`; otherwise Next prerenders them at build time and opens the DB during the build.
+- Next 16 route `params` is a Promise — always `await params`.
+- Reviewer display name lives in `localStorage['review:name']`; the preview iframe is `#preview`.
+- `next dev` auto-generates root `AGENTS.md` (nextjs-agent-rules block) and `CLAUDE.md` (`@AGENTS.md`). They are committed — deleting them just recreates the diff.
 
 ## 2026-08-28 - US-001
 - Scaffolded the Next.js app by hand (no create-next-app): package.json, next.config.ts, tsconfig.json, app/layout.tsx, app/page.tsx placeholder.
@@ -55,3 +59,18 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   - Stale `next-server` processes from earlier iterations linger on ports (3000, 3117). Check `ss -ltnp` before picking a smoke-test port.
   - The click listener is registered in the capture phase — the reviewed site's own handlers never see the click while comment mode is on.
 ---
+
+## 2026-08-28 - US-004
+- Added `app/r/[token]/page.tsx`: server component, `force-dynamic`, resolves the token via new `getTokenContext()` and calls `notFound()` for unknown or revoked tokens.
+- Added `app/not-found.tsx`: "Link not found / invalid or revoked" 404 page.
+- Added `app/r/[token]/shell.tsx`: client shell — header (project, branch, reviewer name), Desktop/Mobile toggle switching the iframe between 100% and 390px, and a one-time name prompt overlay persisted to `localStorage['review:name']`.
+- Added `lib/preview.ts` (`slugBranch` + `previewUrl`) and `lib/preview.test.ts` for Vercel alias construction (`feature/x` -> `feature-x`).
+- Extended `lib/db.ts` with `getTokenContext(token)` returning the token joined with its project, or null when revoked/unknown.
+- Files changed: app/r/[token]/page.tsx, app/r/[token]/shell.tsx, app/not-found.tsx, lib/preview.ts, lib/preview.test.ts, lib/db.ts, AGENTS.md, CLAUDE.md, ralph/prd.json, ralph/progress.txt
+- Verified: `pnpm typecheck` clean, `pnpm test` 11/11, `pnpm build` clean. Browser (Playwright Firefox against a seeded tmp DB on :3210): `/r/tok12345` 200, revoked token 404, unknown token 404; name prompt saves and does not reappear after reload; Mobile toggle → iframe 390px, Desktop → full width; the iframe loads the real Vercel alias (returns Vercel's own DEPLOYMENT_NOT_FOUND, confirming the URL shape).
+- **Learnings for future iterations:**
+  - Next 16 route params are a Promise: `{ params }: { params: Promise<{ token: string }> }`, must be awaited.
+  - Any page touching `getDb()` needs `export const dynamic = 'force-dynamic'` — otherwise the build tries to prerender it and opens the DB at build time.
+  - Playwright is NOT a repo dependency; `pnpm exec playwright screenshot --browser firefox` works via the global `@playwright/cli`, but a *scripted* browser check must import the global CJS build by absolute path (`.../.pnpm/playwright@<ver>/node_modules/playwright/index.js`, default import then destructure). NODE_PATH does not work for ESM.
+  - To test the shell, seed a scratch DB: `DATABASE_PATH=/tmp/reviewdb/review.db` + a project/token insert, then run `pnpm dev` with the same env.
+  - The iframe carries `id="preview"` — US-006/007/008 should postMessage through that element rather than re-querying by tag.

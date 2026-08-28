@@ -66,8 +66,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "app/r/[token]/page.tsx (server, force-dynamic) + shell.tsx (client). lib/preview.ts builds the Vercel branch alias. getTokenContext() in lib/db.ts filters revoked tokens. Name in localStorage key 'review:name'; iframe has id='preview'."
     },
     {
       "id": "US-005",
