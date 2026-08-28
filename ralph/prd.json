@@ -1,0 +1,183 @@
+{
+  "project": "Review",
+  "branchName": "ralph/review-tool",
+  "description": "Markup.io-style client feedback tool at review.cascadeonline.dev — clients open a token link, see the live Vercel branch preview in an iframe, and pin threaded comments/change requests on elements. No accounts. Full spec: tasks/prd-review-tool.md",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Scaffold Next.js app",
+      "description": "As a developer, I need the project skeleton so every later story has a place to live.",
+      "acceptanceCriteria": [
+        "Next.js app (App Router, TypeScript) with output: 'standalone' in next.config",
+        "better-sqlite3 installed and building",
+        "pnpm as package manager; pnpm build and pnpm typecheck scripts work",
+        "Placeholder home page at / renders",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "SQLite schema and db module",
+      "description": "As a developer, I need the database layer so all features have persistence.",
+      "acceptanceCriteria": [
+        "Single db module opens SQLite at env DATABASE_PATH (default ./data/review.db), WAL mode, creates schema on boot if missing",
+        "projects table: id, name, slug (unique), vercel_project, vercel_team, created_at",
+        "tokens table: token (random 8+ chars, PK), project_id, branch, created_at, revoked_at nullable, last_notified_at nullable",
+        "comments table: id, token, project_id, branch, path, parent_id nullable, author, body, type ('comment'|'change_request'), status ('open'|'resolved'), selector, offset_x, offset_y, viewport_width, created_at",
+        "notified flag or notified_at column on comments (for email debounce coverage)",
+        "Tests pass (one test: insert project/token/comment and read back)",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "embed.js bridge script",
+      "description": "As a reviewer, my clicks inside the cross-origin iframe must reach the review shell via postMessage.",
+      "acceptanceCriteria": [
+        "Served at /embed.js as a static, dependency-free script; immediately no-ops when window.self === window.top",
+        "On load, posts current path to parent; reports route changes via pushState/replaceState patch, popstate, hashchange",
+        "When parent enables comment mode, click is intercepted (default prevented): posts computed CSS selector (id, then stable data-* attribute, then structural nth-child path — never class-based), offset within element, and viewport width",
+        "Given {id, selector}[] from parent, posts each pin's current viewport coordinates; recomputes on scroll and resize, throttled",
+        "Posts list of selector ids that fail to resolve",
+        "All messages origin-checked; script ignores messages not from the review origin",
+        "Tests pass (selector generation unit-testable and tested)",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Token route with iframe shell",
+      "description": "As a client, I want to open /r/{token} and see the site preview so I can start reviewing.",
+      "acceptanceCriteria": [
+        "GET /r/{token} looks up token; unknown or revoked token renders a 404 page",
+        "Iframe src built as https://{vercel_project}-git-{slugged-branch}-{vercel_team}.vercel.app with branch slugged per Vercel rules (e.g. feature/x -> feature-x)",
+        "First visit shows a name prompt; name stored in localStorage and reused on return visits",
+        "Desktop/mobile toggle switches iframe width between 100% and 390px",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Comments API",
+      "description": "As a developer, I need CRUD endpoints so the UI stories can persist feedback.",
+      "acceptanceCriteria": [
+        "POST /api/comments creates a comment or reply (parent_id); validates token exists and is not revoked; rejects empty body/author",
+        "GET /api/comments?token=... returns all comments for the token's project+branch, threaded (roots with replies)",
+        "PATCH /api/comments/{id} toggles status open/resolved",
+        "Comments keyed to project+branch so a re-minted token on the same branch sees prior comments",
+        "Tests pass (create, thread, resolve, revoked-token rejection)",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Pin creation UI",
+      "description": "As a client, I want to click an element and leave a comment or change request exactly where I mean.",
+      "acceptanceCriteria": [
+        "Comment-mode toggle in the shell; enabling it notifies embed.js",
+        "Click in iframe drops a pin at the reported position and opens a compose box",
+        "Compose has type chip (comment | change_request) and posts to /api/comments with anchor data, author from localStorage, current path",
+        "Escape or clicking elsewhere cancels compose without saving",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Pin rendering and threads",
+      "description": "As a reviewer, I want existing pins overlaid on the page and threads openable so I can read and reply.",
+      "acceptanceCriteria": [
+        "Pins for the current path render overlaid at positions reported by embed.js, tracking scroll/resize",
+        "Clicking a pin opens its thread panel showing root comment and replies with author, timestamp, type chip",
+        "Reply box in thread posts with parent_id",
+        "Pins whose selector no longer resolves do not render on the page",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Sidebar, resolve, polling",
+      "description": "As a reviewer, I want an overview of all feedback and live-ish updates so rounds converge.",
+      "acceptanceCriteria": [
+        "Sidebar lists all root comments across paths, grouped by path, with type and status chips; outdated (unresolvable selector) comments get an 'outdated' badge",
+        "Clicking a sidebar item navigates the iframe to that path and highlights the pin",
+        "Resolve/unresolve toggle on root comments; resolved pins hidden by default with a 'show resolved' switch",
+        "Shell polls GET /api/comments every ~5s; new comments from other viewers appear without refresh",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "SendGrid email notifications",
+      "description": "As the team, I want a debounced email when clients leave feedback so nothing sits unseen.",
+      "acceptanceCriteria": [
+        "On comment create: if token's last_notified_at is null or >10 min ago, send email via SendGrid v3 API (plain fetch, no SDK) to env NOTIFY_EMAIL: 'N new comments on {project}/{branch}' with the /r/{token} link, counting all unnotified comments",
+        "Comments created inside the debounce window are included in the next send — no comment is ever silently unnotified",
+        "SENDGRID_API_KEY and NOTIFY_EMAIL from env; send failure logs but never blocks comment creation",
+        "Tests pass (debounce logic with mocked send: burst of comments yields one email covering all)",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Admin page",
+      "description": "As the team, I want to register projects and mint token links without touching the DB by hand.",
+      "acceptanceCriteria": [
+        "/admin lists projects with open/total comment counts",
+        "Add-project form: name, slug, vercel_project, vercel_team",
+        "Generate token for a project+branch; link shown with copy button; revoke button sets revoked_at",
+        "No auth code in the app (Cloudflare Access protects the path at the edge, configured at deploy time)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Containerization",
+      "description": "As the team, I want the app packaged for Coolify on gpu1 so it can be deployed via the homelab playbook.",
+      "acceptanceCriteria": [
+        "Dockerfile builds the Next standalone output; container runs as non-root",
+        "docker-compose.yml at repo root (not .yaml): single service, named volume mounted at the DATABASE_PATH directory, env vars DATABASE_PATH, SENDGRID_API_KEY, NOTIFY_EMAIL passed through",
+        "docker compose up serves the app locally and a created comment survives docker compose restart",
+        "README section listing the manual deploy steps from homelab-command/docs/playbook-deploy-subdomain.md (Coolify app, tunnel ingress, DNS, Access app for /admin)",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
