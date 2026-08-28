@@ -15,7 +15,8 @@ export default async function ReviewPage({ params }: { params: Promise<{ token: 
       token={token}
       project={ctx.name}
       branch={ctx.branch}
-      src={previewUrl(ctx.vercel_project, ctx.branch, ctx.vercel_team)}
+      // ponytail: PREVIEW_OVERRIDE points the iframe at a local fake site for browser tests.
+      src={process.env.PREVIEW_OVERRIDE ?? previewUrl(ctx.vercel_project, ctx.branch, ctx.vercel_team)}
     />
   )
 }

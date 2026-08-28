@@ -17,6 +17,10 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
 - Server components/routes that call `getDb()` must `export const dynamic = 'force-dynamic'`; otherwise Next prerenders them at build time and opens the DB during the build.
 - Next 16 route `params` is a Promise — always `await params`.
 - Reviewer display name lives in `localStorage['review:name']`; the preview iframe is `#preview`.
+- Browser-testing the iframe bridge: run the dev server with `PREVIEW_OVERRIDE=http://127.0.0.1:3402` and serve a fake
+  cross-origin site (`python3 -m http.server 3402`) whose index.html loads `http://localhost:<devport>/embed.js`.
+- Shell-side postMessage listeners must filter on both `e.source === frameRef.current?.contentWindow` and `e.origin`;
+  Next's dev HMR posts to the same window.
 - `next dev` auto-generates root `AGENTS.md` (nextjs-agent-rules block) and `CLAUDE.md` (`@AGENTS.md`). They are committed — deleting them just recreates the diff.
 
 ## 2026-08-28 - US-001
@@ -88,3 +92,18 @@ Started: Fri Aug 28 12:39:35 PM PDT 2026
   - Non-route lib modules that tests import must use relative `./x.ts` specifiers (not the `@/lib/x` alias) — Turbopack resolves the explicit `.ts` extension fine, so one import style works for both.
   - better-sqlite3 supports `INSERT ... RETURNING *` / `UPDATE ... RETURNING *` via `.get()` — no second SELECT after a write.
   - `await request.json().catch(() => ({}))` turns malformed JSON into a normal 400 from field validation instead of a 500.
+
+## 2026-08-28 - US-006
+- Pin creation UI in `app/r/[token]/shell.tsx`: "Comment" toggle in the header posts `{type:'comment-mode', on}` to the iframe; a `click` message from embed.js drops a pin at the reported viewport coords and opens a compose card next to it (comment mode auto-disables after the drop).
+- Compose card: type chips (Comment | Change request), textarea, Cancel/Post. Post sends `{token, path, author, body, type, selector, offset_x, offset_y, viewport_width}` to `POST /api/comments`. Escape, Cancel, clicking the backdrop, or an iframe route change all discard the pending pin without saving.
+- Header now shows the iframe's current path (embed `path` messages; `ping` sent on iframe `onLoad`).
+- Wrapped the iframe in a `position: relative` box so overlay coordinates map 1:1 to iframe viewport coordinates in both Desktop and Mobile widths.
+- `app/r/[token]/page.tsx`: iframe src falls back to `process.env.PREVIEW_OVERRIDE` when set (marked `ponytail:`) — the only practical way to browser-test the bridge without a live Vercel deployment.
+- Files changed: app/r/[token]/shell.tsx, app/r/[token]/page.tsx, ralph/prd.json, ralph/progress.txt
+- Verified: `pnpm typecheck` clean, `pnpm test` 15/15, `pnpm build` clean. Browser (Playwright Firefox, dev server :3401 + fake site on python http.server :3402 loading /embed.js): name prompt -> comment mode -> click `#hero` opens compose; Escape closes it; outside click closes it; click `[data-block="two"]` + Change request + Post -> GET /api/comments returns the row with `selector: div[data-block="two"]`, offsets and `viewport_width: 1384`. Screenshot confirmed the pin sits exactly on the click point.
+- **Learnings for future iterations:**
+  - Browser-testing anything that involves embed.js needs a cross-origin fake site. Recipe: `python3 -m http.server 3402` in a dir whose index.html loads `http://localhost:<devport>/embed.js`, then run the dev server with `PREVIEW_OVERRIDE=http://127.0.0.1:3402`. Different port = different origin, so the postMessage path is exercised for real.
+  - Inbound postMessage in the shell must be filtered on BOTH `e.source === frameRef.current?.contentWindow` and `e.origin === previewOrigin`; Next's own dev HMR posts messages to the same window.
+  - Overlay pins are positioned against a `position: relative` wrapper that is exactly the iframe's box — never against the stage, or the Mobile (390px) width offsets everything.
+  - `frameLocator('#preview')` in Playwright works against the fake site; use `page.request.get` for the API assertion so the check runs in one script.
+---

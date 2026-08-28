@@ -98,8 +98,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Shell owns comment mode + pending pin: postMessage to #preview (targetOrigin = preview origin), inbound messages checked by e.source === iframe.contentWindow AND e.origin. Compose is an absolutely positioned form inside a relative frameBox wrapper so click coords from embed.js map 1:1. PREVIEW_OVERRIDE env points the iframe at a local fake site for browser testing."
     },
     {
       "id": "US-007",
