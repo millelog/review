@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { createProject, mintToken, revokeToken } from '@/lib/admin'
+import { removeComment } from '@/lib/comments'
 
 // ponytail: errors round-trip through ?error= instead of useActionState — the page is force-dynamic anyway.
 function run(fn: () => void): never {
@@ -30,4 +31,8 @@ export async function addToken(form: FormData) {
 
 export async function revoke(form: FormData) {
   run(() => revokeToken(form.get('token')))
+}
+
+export async function deleteComment(form: FormData) {
+  run(() => removeComment(Number(form.get('id'))))
 }

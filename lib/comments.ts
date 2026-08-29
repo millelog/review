@@ -89,6 +89,25 @@ export function listThreads(token: string): Thread[] {
   return [...roots.values()]
 }
 
+/** Deletes a comment and, when it is a thread root, its replies. Admin path — no ownership check. */
+export function removeComment(id: number): void {
+  const res = getDb().prepare('DELETE FROM comments WHERE id = ? OR parent_id = ?').run(id, id)
+  if (!res.changes) throw new ApiError('comment not found', 404)
+}
+
+// ponytail: the author name is the only identity a link-only reviewer has — it stops accidents, not
+// spoofing. Anyone with the link can already post under any name; add a per-browser key if that changes.
+export function deleteOwnComment(token: string, id: number, author: string): void {
+  const ctx = getTokenContext(token)
+  if (!ctx) throw new ApiError('invalid or revoked token', 404)
+  const row = getDb()
+    .prepare('SELECT author FROM comments WHERE id = ? AND project_id = ? AND branch = ?')
+    .get(id, ctx.project_id, ctx.branch) as Pick<Comment, 'author'> | undefined
+  if (!row) throw new ApiError('comment not found', 404)
+  if (row.author !== str(author, 'author')) throw new ApiError('you can only delete your own comments', 403)
+  removeComment(id)
+}
+
 /** Flips a comment between open and resolved. */
 export function toggleStatus(id: number): Comment {
   const row = getDb()

@@ -1,9 +1,15 @@
 import { randomBytes } from 'node:crypto'
 import { getDb } from './db.ts'
-import type { Project, Token } from './db.ts'
+import type { Comment, Project, Token } from './db.ts'
 import { ApiError } from './comments.ts'
+import { slugBranch } from './preview.ts'
 
-export type ProjectRow = Project & { open_comments: number; total_comments: number; tokens: Token[] }
+export type ProjectRow = Project & {
+  open_comments: number
+  total_comments: number
+  tokens: Token[]
+  comments: Comment[]
+}
 
 export function listProjects(): ProjectRow[] {
   const db = getDb()
@@ -14,9 +20,14 @@ export function listProjects(): ProjectRow[] {
               (SELECT COUNT(*) FROM comments c WHERE c.project_id = p.id AND c.status = 'open') AS open_comments
        FROM projects p ORDER BY p.name`,
     )
-    .all() as Omit<ProjectRow, 'tokens'>[]
+    .all() as Omit<ProjectRow, 'tokens' | 'comments'>[]
   const tokens = db.prepare('SELECT * FROM tokens ORDER BY created_at DESC').all() as Token[]
-  return projects.map((p) => ({ ...p, tokens: tokens.filter((t) => t.project_id === p.id) }))
+  const comments = db.prepare('SELECT * FROM comments ORDER BY id DESC').all() as Comment[]
+  return projects.map((p) => ({
+    ...p,
+    tokens: tokens.filter((t) => t.project_id === p.id),
+    comments: comments.filter((c) => c.project_id === p.id),
+  }))
 }
 
 function str(value: unknown, field: string): string {
@@ -47,12 +58,16 @@ export function createProject(input: {
 
 export function mintToken(projectId: unknown, branch: unknown): Token {
   const id = Number(projectId)
-  if (!Number.isInteger(id) || !getDb().prepare('SELECT 1 FROM projects WHERE id = ?').get(id)) {
-    throw new ApiError('unknown project', 404)
-  }
+  const project = getDb().prepare('SELECT slug FROM projects WHERE id = ?').get(id) as
+    | Pick<Project, 'slug'>
+    | undefined
+  if (!Number.isInteger(id) || !project) throw new ApiError('unknown project', 404)
+  const name = str(branch, 'branch')
+  // readable link, unguessable tail: /r/acme-feature-pricing-Xk29fa
+  const token = `${slugBranch(project.slug)}-${slugBranch(name)}-${randomBytes(6).toString('base64url')}`
   return getDb()
     .prepare('INSERT INTO tokens (token, project_id, branch) VALUES (?, ?, ?) RETURNING *')
-    .get(randomBytes(6).toString('base64url'), id, str(branch, 'branch')) as Token
+    .get(token, id, name) as Token
 }
 
 export function revokeToken(token: unknown): void {

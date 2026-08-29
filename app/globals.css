@@ -25,16 +25,21 @@ button:active {
   transform: scale(0.97);
 }
 
-/* grows upward on hover rather than translating, so it stays flush with the viewport edge */
+/* lifts on hover; the matching padding-bottom refills the gap so it stays flush with the edge */
 .dock {
   transition:
+    transform 0.18s var(--ease-out-expo),
     padding-bottom 0.18s var(--ease-out-expo),
     box-shadow 0.18s var(--ease-out-expo);
 }
 
 .dock:hover {
-  padding-bottom: 11px;
-  box-shadow: 0 -14px 44px rgba(0, 0, 0, 0.55);
+  transform: translateY(-7px);
+  padding-bottom: 13px;
+  box-shadow:
+    0 -2px 8px rgba(0, 0, 0, 0.5),
+    0 -16px 34px rgba(0, 0, 0, 0.45),
+    0 -30px 70px rgba(0, 0, 0, 0.4);
 }
 
 input[type='checkbox'] {

@@ -220,6 +220,18 @@ export default function Shell({
     await load()
   }
 
+  async function remove(id: number, isRoot: boolean) {
+    if (!name) return
+    if (!confirm(isRoot ? 'Delete this comment and its replies?' : 'Delete this reply?')) return
+    const res = await fetch(
+      `/api/comments/${id}?token=${encodeURIComponent(token)}&author=${encodeURIComponent(name)}`,
+      { method: 'DELETE' },
+    )
+    if (!res.ok) return alert((await res.json()).error ?? 'Could not delete that comment')
+    if (isRoot) setOpenId(null)
+    await load()
+  }
+
   /** Sidebar click: restore the page, preview size and scroll position the comment was left at. */
   function focusThread(t: Thread) {
     if (t.status === 'resolved') setShowResolved(true)
@@ -275,8 +287,10 @@ export default function Shell({
               thread={openThread}
               at={positions[openThread.id]}
               width={frameRef.current?.clientWidth || 0}
+              me={name}
               onReply={reply}
               onToggleResolved={toggleResolved}
+              onDelete={remove}
               onClose={() => setOpenId(null)}
             />
           )}
@@ -535,15 +549,19 @@ function ThreadPanel({
   thread,
   at,
   width,
+  me,
   onReply,
   onToggleResolved,
+  onDelete,
   onClose,
 }: {
   thread: Thread
   at: { x: number; y: number }
   width: number
+  me: string | null
   onReply: (parentId: number, body: string) => Promise<void>
   onToggleResolved: (id: number) => void
+  onDelete: (id: number, isRoot: boolean) => void
   onClose: () => void
 }) {
   const [body, setBody] = useState('')
@@ -556,9 +574,17 @@ function ThreadPanel({
       data-thread={thread.id}
     >
       <div style={S.threadScroll}>
-        <Entry comment={thread} onClose={onClose} />
+        <Entry
+          comment={thread}
+          onClose={onClose}
+          onDelete={thread.author === me ? () => onDelete(thread.id, true) : undefined}
+        />
         {thread.replies.map((r) => (
-          <Entry key={r.id} comment={r} />
+          <Entry
+            key={r.id}
+            comment={r}
+            onDelete={r.author === me ? () => onDelete(r.id, false) : undefined}
+          />
         ))}
       </div>
       <form
@@ -599,7 +625,15 @@ function ThreadPanel({
   )
 }
 
-function Entry({ comment, onClose }: { comment: Comment; onClose?: () => void }) {
+function Entry({
+  comment,
+  onClose,
+  onDelete,
+}: {
+  comment: Comment
+  onClose?: () => void
+  onDelete?: () => void
+}) {
   const size = sizeLabel(comment.viewport_width)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -608,13 +642,14 @@ function Entry({ comment, onClose }: { comment: Comment; onClose?: () => void })
           {comment.author[0].toUpperCase()}
         </span>
         <strong style={{ fontSize: 12.5, ...S.ellipsis }}>{comment.author}</strong>
+        <span style={{ flex: 1 }} />
+        {onDelete && (
+          <button type="button" title="Delete" style={{ ...S.iconBtn, padding: 3 }} onClick={onDelete}>
+            <TrashIcon />
+          </button>
+        )}
         {onClose && (
-          <button
-            type="button"
-            title="Close"
-            style={{ ...S.iconBtn, marginLeft: 'auto', padding: 3 }}
-            onClick={onClose}
-          >
+          <button type="button" title="Close" style={{ ...S.iconBtn, padding: 3 }} onClick={onClose}>
             <XIcon />
           </button>
         )}
@@ -839,6 +874,14 @@ function XIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 14 14" {...stroke}>
       <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" />
+    </svg>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" {...stroke}>
+      <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.6 9a1 1 0 0 0 1 1h4.8a1 1 0 0 0 1-1L12 4" />
     </svg>
   )
 }
@@ -1118,16 +1161,16 @@ const S = {
     color: 'rgba(255,255,255,.65)',
     border: '1px solid rgba(255,255,255,.1)',
     borderBottom: 'none',
-    borderRadius: '12px 12px 0 0',
-    padding: '4px 11px 6px',
+    borderRadius: '14px 14px 0 0',
+    padding: '9px 11px 6px',
     cursor: 'pointer',
     boxShadow: '0 -8px 30px rgba(0,0,0,.4)',
   },
   dockChatBtn: (active: boolean) => ({
     display: 'flex',
-    padding: 6,
+    padding: 7,
     border: 0,
-    borderRadius: 8,
+    borderRadius: '50%',
     background: active ? 'rgba(42,194,198,.25)' : 'var(--teal)',
     color: active ? 'var(--teal)' : DARK,
     cursor: 'pointer',

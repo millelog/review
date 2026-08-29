@@ -17,7 +17,7 @@ test('create project, mint token, revoke, counts', () => {
   assert.throws(() => createProject({ name: ' ', slug: 'b', vercel_project: 'x', vercel_team: 'y' }), /name/)
 
   const t = mintToken(p.id, 'feature/x')
-  assert.ok(t.token.length >= 8)
+  assert.match(t.token, /^acme-feature-x-[A-Za-z0-9_-]{8}$/)
   assert.equal(getTokenContext(t.token)?.branch, 'feature/x')
   assert.notEqual(mintToken(p.id, 'main').token, t.token)
   assert.throws(() => mintToken(999, 'main'), /unknown project/)

@@ -6,7 +6,8 @@ import { join } from 'node:path'
 
 process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'review-')), 'test.db')
 const { getDb } = await import('./db.ts')
-const { createComment, listThreads, toggleStatus, ApiError } = await import('./comments.ts')
+const { createComment, listThreads, toggleStatus, deleteOwnComment, removeComment, ApiError } =
+  await import('./comments.ts')
 const { AVATAR_COLORS } = await import('./brand.ts')
 
 const db = getDb()
@@ -79,6 +80,28 @@ test('rejects empty body or author', () => {
 test('rejects out-of-scope parent and unknown comment id', () => {
   assert.throws(() => createComment({ token: 'tok11111', path: '/', author: 'D', body: 'x', parent_id: 999 }), ApiError)
   assert.throws(() => toggleStatus(999), ApiError)
+})
+
+test('deletes only your own comments, and replies go with their root', () => {
+  const root = createComment({ token: 'tok11111', path: '/del', author: 'Dana', body: 'root' })
+  const mine = createComment({ token: 'tok11111', path: '/del', author: 'Sam', body: 'mine', parent_id: root.id })
+  const theirs = createComment({ token: 'tok11111', path: '/del', author: 'Dana', body: 'theirs', parent_id: root.id })
+
+  assert.throws(
+    () => deleteOwnComment('tok11111', theirs.id, 'Sam'),
+    (e) => e instanceof ApiError && e.status === 403,
+  )
+  assert.throws(() => deleteOwnComment('dead0000', mine.id, 'Sam'), ApiError)
+  assert.throws(() => deleteOwnComment('tok11111', 999, 'Sam'), ApiError)
+
+  deleteOwnComment('tok11111', mine.id, 'Sam')
+  const on = (path: string) => listThreads('tok11111').find((t) => t.path === path && t.id === root.id)
+  assert.deepEqual(on('/del')?.replies.map((r) => r.body), ['theirs'])
+
+  removeComment(root.id) // admin delete takes the replies with it
+  assert.equal(on('/del'), undefined)
+  assert.equal(listThreads('tok11111').filter((t) => t.path === '/del').length, 0)
+  assert.throws(() => removeComment(root.id), ApiError)
 })
 
 test('keeps palette colours, drops anything else', () => {

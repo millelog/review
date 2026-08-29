@@ -1,6 +1,6 @@
 import { listProjects } from '@/lib/admin'
 import { LOGO } from '@/lib/brand'
-import { addProject, addToken, revoke } from './actions'
+import { addProject, addToken, deleteComment, revoke } from './actions'
 import CopyLink from './copy'
 
 export const dynamic = 'force-dynamic'
@@ -59,6 +59,32 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
             <input name="branch" placeholder="branch (e.g. feature/pricing)" required style={S.input} />
             <button style={S.primary}>Generate link</button>
           </form>
+
+          {p.comments.length > 0 && (
+            <details style={{ marginTop: 10 }}>
+              <summary style={{ ...S.muted, cursor: 'pointer' }}>
+                Comments ({p.comments.length})
+              </summary>
+              <ul style={S.list}>
+                {p.comments.map((c) => (
+                  <li key={c.id} style={{ ...S.row, alignItems: 'flex-start' }}>
+                    <span style={S.muted}>
+                      {c.branch} {c.path}
+                      {c.parent_id ? ' · reply' : ''}
+                    </span>
+                    <span style={S.body}>
+                      <strong>{c.author}:</strong> {c.body}
+                    </span>
+                    <span style={S.muted}>{c.status}</span>
+                    <form action={deleteComment}>
+                      <input type="hidden" name="id" value={c.id} />
+                      <button style={S.button}>Delete</button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </section>
       ))}
 
@@ -91,6 +117,7 @@ const S = {
   form: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   list: { listStyle: 'none', padding: 0, margin: '10px 0' },
   muted: { color: '#9a9a9a', fontSize: 13 },
+  body: { flex: '1 1 240px', minWidth: 0, fontSize: 13, overflowWrap: 'anywhere' },
   dead: { textDecoration: 'line-through', color: '#777' },
   spacer: { flex: 1 },
   input: {
