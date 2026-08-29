@@ -1,5 +1,6 @@
 import { getDb, getTokenContext } from './db.ts'
 import type { Comment, CommentType } from './db.ts'
+import { AVATAR_COLORS } from './brand.ts'
 
 export class ApiError extends Error {
   status: number
@@ -15,6 +16,7 @@ export type NewComment = {
   token: string
   path: string
   author: string
+  color?: string
   body: string
   type?: CommentType
   parent_id?: number | null
@@ -49,8 +51,8 @@ export function createComment(input: NewComment): Comment {
   return getDb()
     .prepare(
       `INSERT INTO comments
-         (token, project_id, branch, path, parent_id, author, body, type, selector, offset_x, offset_y, viewport_width)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (token, project_id, branch, path, parent_id, author, color, body, type, selector, offset_x, offset_y, viewport_width)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING *`,
     )
     .get(
@@ -60,6 +62,7 @@ export function createComment(input: NewComment): Comment {
       input.path || '/',
       parentId,
       author,
+      AVATAR_COLORS.includes(input.color ?? '') ? input.color : '',
       body,
       type,
       input.selector ?? '',

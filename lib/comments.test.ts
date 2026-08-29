@@ -7,6 +7,7 @@ import { join } from 'node:path'
 process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'review-')), 'test.db')
 const { getDb } = await import('./db.ts')
 const { createComment, listThreads, toggleStatus, ApiError } = await import('./comments.ts')
+const { AVATAR_COLORS } = await import('./brand.ts')
 
 const db = getDb()
 const projectId = Number(
@@ -78,4 +79,11 @@ test('rejects empty body or author', () => {
 test('rejects out-of-scope parent and unknown comment id', () => {
   assert.throws(() => createComment({ token: 'tok11111', path: '/', author: 'D', body: 'x', parent_id: 999 }), ApiError)
   assert.throws(() => toggleStatus(999), ApiError)
+})
+
+test('keeps palette colours, drops anything else', () => {
+  const base = { token: 'tok11111', path: '/', author: 'Dana', body: 'hi' }
+  assert.equal(createComment({ ...base, color: AVATAR_COLORS[2] }).color, AVATAR_COLORS[2])
+  assert.equal(createComment({ ...base, color: 'url(evil)' }).color, '')
+  assert.equal(createComment(base).color, '')
 })

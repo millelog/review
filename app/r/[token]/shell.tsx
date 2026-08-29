@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Comment, CommentType } from '@/lib/db'
 import type { Thread } from '@/lib/comments'
-import { LOGO } from '@/lib/brand'
+import { AVATAR_COLORS, avatarColor, LOGO } from '@/lib/brand'
 
 const NAME_KEY = 'review:name'
+const COLOR_KEY = 'review:color'
 
 const VIEWPORTS = {
   desktop: { width: '100%', height: '100%' },
@@ -36,6 +37,9 @@ export default function Shell({
   src: string
 }) {
   const [name, setName] = useState<string | null>(null)
+  const [color, setColor] = useState('')
+  const [editingMe, setEditingMe] = useState(false)
+  const [draftName, setDraftName] = useState('')
   const [ready, setReady] = useState(false)
   const [viewport, setViewport] = useState<Viewport>('desktop')
   const [panelOpen, setPanelOpen] = useState(false)
@@ -66,6 +70,7 @@ export default function Shell({
 
   useEffect(() => {
     setName(localStorage.getItem(NAME_KEY))
+    setColor(localStorage.getItem(COLOR_KEY) ?? '')
     setReady(true)
   }, [])
 
@@ -185,6 +190,7 @@ export default function Shell({
         token,
         path: pending.path,
         author: name,
+        color,
         body,
         type,
         selector: pending.selector,
@@ -202,7 +208,7 @@ export default function Shell({
     await fetch('/api/comments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, path, author: name, body, parent_id: parentId }),
+      body: JSON.stringify({ token, path, author: name, color, body, parent_id: parentId }),
     })
     await load()
   }
@@ -291,11 +297,22 @@ export default function Shell({
       )}
 
       {!name ? null : docked ? (
-        <button style={S.dock} onClick={() => setDocked(false)} title="Open review panel">
-          <img src="/mark.png" alt="" width={16} height={16} />
-          <Chevron up />
+        <div style={S.dock}>
+          <button
+            style={{ ...S.iconBtn, color: commentMode ? 'var(--teal)' : S.iconBtn.color }}
+            title={commentMode ? 'Cancel commenting' : 'Leave a comment'}
+            onClick={() => {
+              setPending(null)
+              setCommentMode((on) => !on)
+            }}
+          >
+            <BubbleIcon />
+          </button>
+          <button style={S.iconBtn} title="Open review panel" onClick={() => setDocked(false)}>
+            <Chevron up />
+          </button>
           {openCount > 0 && <span style={S.dockBadge}>{openCount}</span>}
-        </button>
+        </div>
       ) : (
         <div ref={cardRef} style={S.cardWrap(cardPos, panelOpen)}>
           <div style={S.card}>
@@ -345,18 +362,57 @@ export default function Shell({
               </button>
 
               <div style={S.cardFoot}>
-                <span style={S.avatar}>{(name || 'G')[0].toUpperCase()}</span>
-                <span style={S.who}>{name || 'Guest reviewer'}</span>
+                <button
+                  style={S.mePill}
+                  title="Edit your name and colour"
+                  onClick={() => {
+                    setDraftName(name ?? '')
+                    setEditingMe((o) => !o)
+                  }}
+                >
+                  <span style={S.avatar(avatarColor(name || 'G', color))}>
+                    {(name || 'G')[0].toUpperCase()}
+                  </span>
+                  <span style={S.who}>{name || 'Guest reviewer'}</span>
+                </button>
                 <button style={S.feedbackBtn(panelOpen)} onClick={() => setPanelOpen((o) => !o)}>
                   Feedback ({openCount})
                 </button>
               </div>
+
+              {editingMe && (
+                <div style={S.mePanel}>
+                  <input
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    onBlur={commitName}
+                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                    placeholder="Your name"
+                    style={S.meInput}
+                  />
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {AVATAR_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        title={c}
+                        style={S.swatch(c, avatarColor(name || 'G', color) === c)}
+                        onClick={() => {
+                          setColor(c)
+                          localStorage.setItem(COLOR_KEY, c)
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {ready && !name && <NamePrompt project={project} branch={branch} onSubmit={saveName} />}
+      {ready && !name && (
+        <NamePrompt project={project} branch={branch} origin={previewOrigin} onSubmit={saveName} />
+      )}
     </div>
   )
 
@@ -364,6 +420,14 @@ export default function Shell({
   function saveName(value: string) {
     localStorage.setItem(NAME_KEY, value)
     setTimeout(() => setName(value), 480)
+  }
+
+  /** Blank input keeps the previous name — an empty one would re-trigger the splash. */
+  function commitName() {
+    const trimmed = draftName.trim()
+    if (!trimmed) return setDraftName(name ?? '')
+    localStorage.setItem(NAME_KEY, trimmed)
+    setName(trimmed)
   }
 }
 
@@ -504,7 +568,9 @@ function Entry({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={S.avatar}>{comment.author[0].toUpperCase()}</span>
+        <span style={S.avatar(avatarColor(comment.author, comment.color))}>
+          {comment.author[0].toUpperCase()}
+        </span>
         <strong style={{ fontSize: 12.5 }}>{comment.author}</strong>
         {comment.type === 'change_request' && <span style={S.chip(true)}>Change request</span>}
         <span style={{ ...S.muted, fontSize: 11 }}>{stamp(comment.created_at)}</span>
@@ -530,13 +596,30 @@ function Entry({
   )
 }
 
+// ponytail: /favicon.ico only, falls back to our mark; parse the page's <link rel=icon> if sites need it.
+function Favicon({ origin }: { origin: string }) {
+  const [src, setSrc] = useState(`${origin}/favicon.ico`)
+  return (
+    <img
+      src={src}
+      alt=""
+      width={14}
+      height={14}
+      style={{ borderRadius: 3, objectFit: 'contain' }}
+      onError={() => setSrc('/mark.png')}
+    />
+  )
+}
+
 function NamePrompt({
   project,
   branch,
+  origin,
   onSubmit,
 }: {
   project: string
   branch: string
+  origin: string
   onSubmit: (name: string) => void
 }) {
   const [value, setValue] = useState('')
@@ -560,7 +643,7 @@ function NamePrompt({
           page. We see them instantly.
         </p>
         <div style={{ ...S.urlPill, display: 'inline-flex', width: 'auto', marginBottom: 24 }}>
-          <img src="/mark.png" alt="" width={14} height={14} />
+          <Favicon origin={origin} />
           {project}
           <span style={{ opacity: 0.45 }}>·</span>
           {branch}
@@ -639,6 +722,7 @@ function Sidebar({
                 <button type="button" style={S.itemBody} onClick={() => onSelect(t)}>
                   <span style={{ fontSize: 13, lineHeight: 1.45 }}>{t.body}</span>
                   <span style={S.meta}>
+                    <span style={S.dot(avatarColor(t.author, t.color))} />
                     {t.author}
                     {t.replies.length > 0 &&
                       ` · ${t.replies.length} repl${t.replies.length === 1 ? 'y' : 'ies'}`}
@@ -903,7 +987,7 @@ const S = {
     paddingTop: 13,
     borderTop: '1px solid rgba(255,255,255,.08)',
   },
-  avatar: {
+  avatar: (color: string) => ({
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -911,12 +995,58 @@ const S = {
     width: 22,
     height: 22,
     borderRadius: '50%',
-    background: 'var(--card)',
+    background: color,
     border: '1px solid rgba(255,255,255,.2)',
-    color: 'rgba(255,255,255,.85)',
+    color: DARK,
     fontSize: 10.5,
     fontWeight: 700,
+  }),
+  mePill: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: 0,
+    border: 0,
+    background: 'none',
+    font: 'inherit',
+    textAlign: 'left',
+    cursor: 'pointer',
   },
+  mePanel: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTop: '1px solid rgba(255,255,255,.08)',
+  },
+  meInput: {
+    width: '100%',
+    marginBottom: 9,
+    padding: '8px 11px',
+    fontSize: 13,
+    fontFamily: 'inherit',
+    background: 'var(--card)',
+    color: '#fff',
+    border: '1px solid rgba(255,255,255,.14)',
+    borderRadius: 9,
+    outline: 'none',
+  },
+  swatch: (color: string, active: boolean) => ({
+    width: 22,
+    height: 22,
+    padding: 0,
+    borderRadius: '50%',
+    background: color,
+    cursor: 'pointer',
+    border: active ? '2px solid #fff' : '1px solid rgba(255,255,255,.2)',
+  }),
+  dot: (color: string) => ({
+    display: 'inline-block',
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    background: color,
+  }),
   who: { flex: 1, fontSize: 12, color: 'rgba(255,255,255,.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   feedbackBtn: (active: boolean) => ({
     border: 0,
@@ -943,7 +1073,7 @@ const S = {
     borderBottom: 'none',
     borderTop: '2px solid var(--teal)',
     borderRadius: '12px 12px 0 0',
-    padding: '9px 15px 11px',
+    padding: '4px 11px 6px',
     cursor: 'pointer',
     boxShadow: '0 -8px 30px rgba(0,0,0,.4)',
   },
@@ -1072,7 +1202,7 @@ const S = {
     top: 0,
     right: 0,
     bottom: 0,
-    zIndex: 45,
+    zIndex: 30,
     width: 300,
     background: DARK,
     color: '#fff',
@@ -1118,7 +1248,13 @@ const S = {
     font: 'inherit',
     color: 'inherit',
   },
-  meta: { fontSize: 11, color: 'rgba(255,255,255,.45)' },
+  meta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+    fontSize: 11,
+    color: 'rgba(255,255,255,.45)',
+  },
   badge: (color: string) => ({
     padding: '2px 8px',
     fontSize: 10.5,

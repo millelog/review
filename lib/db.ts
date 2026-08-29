@@ -31,6 +31,7 @@ export type Comment = {
   path: string
   parent_id: number | null
   author: string
+  color: string
   body: string
   type: CommentType
   status: CommentStatus
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS comments (
   path TEXT NOT NULL,
   parent_id INTEGER REFERENCES comments(id),
   author TEXT NOT NULL,
+  color TEXT NOT NULL DEFAULT '',
   body TEXT NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('comment', 'change_request')),
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
@@ -95,6 +97,10 @@ export function getDb(): Database.Database {
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   db.exec(SCHEMA)
+  // ponytail: sqlite has no ADD COLUMN IF NOT EXISTS; the throw on an existing column is the check.
+  try {
+    db.exec("ALTER TABLE comments ADD COLUMN color TEXT NOT NULL DEFAULT ''")
+  } catch {}
   instance = db
   return db
 }
