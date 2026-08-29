@@ -1,4 +1,5 @@
 import { listProjects } from '@/lib/admin'
+import { LOGO } from '@/lib/brand'
 import { addProject, addToken, revoke } from './actions'
 import CopyLink from './copy'
 
@@ -11,6 +12,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
 
   return (
     <main style={S.page}>
+      <img src={LOGO} alt="Cascade Online" height={22} style={{ display: 'block', marginBottom: 20 }} />
       <h1 style={S.h1}>Review admin</h1>
       {error ? <p style={S.error}>{error}</p> : null}
 
@@ -55,7 +57,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           <form action={addToken} style={S.row}>
             <input type="hidden" name="project_id" value={p.id} />
             <input name="branch" placeholder="branch (e.g. feature/pricing)" required style={S.input} />
-            <button style={S.button}>Generate link</button>
+            <button style={S.primary}>Generate link</button>
           </form>
         </section>
       ))}
@@ -67,7 +69,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           <input name="slug" placeholder="slug" required style={S.input} />
           <input name="vercel_project" placeholder="vercel project" required style={S.input} />
           <input name="vercel_team" placeholder="vercel team" required style={S.input} />
-          <button style={S.button}>Add</button>
+          <button style={S.primary}>Add</button>
         </form>
       </section>
     </main>
@@ -75,23 +77,47 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
 }
 
 const S = {
-  page: { fontFamily: 'system-ui, sans-serif', padding: 32, maxWidth: 820, margin: '0 auto', fontSize: 14 },
+  page: { padding: 32, maxWidth: 860, margin: '0 auto', fontSize: 14 },
   h1: { fontSize: 20, margin: '0 0 16px' },
-  error: { padding: '8px 12px', borderRadius: 6, background: '#fee', color: '#900' },
-  card: { border: '1px solid #e5e5e5', borderRadius: 8, padding: 14, marginBottom: 14 },
+  error: { padding: '8px 12px', borderRadius: 8, background: '#4a1f1f', color: '#ff9d9d' },
+  card: {
+    border: '1px solid var(--divider)',
+    background: 'var(--card)',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+  },
   row: { display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' },
   form: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   list: { listStyle: 'none', padding: 0, margin: '10px 0' },
-  muted: { color: '#666', fontSize: 13 },
-  dead: { textDecoration: 'line-through', color: '#999' },
+  muted: { color: '#9a9a9a', fontSize: 13 },
+  dead: { textDecoration: 'line-through', color: '#777' },
   spacer: { flex: 1 },
-  input: { padding: '5px 8px', fontSize: 13, borderRadius: 6, border: '1px solid #ddd' },
-  button: {
-    padding: '5px 10px',
+  input: {
+    padding: '6px 10px',
     fontSize: 13,
-    borderRadius: 6,
-    border: '1px solid #ddd',
-    background: '#fff',
+    borderRadius: 8,
+    background: '#262626',
+    color: '#fff',
+    border: '1px solid var(--divider)',
+  },
+  button: {
+    padding: '5px 12px',
+    fontSize: 13,
+    borderRadius: 100,
+    border: '1px solid var(--divider)',
+    background: 'transparent',
+    color: '#fff',
+    cursor: 'pointer',
+  },
+  primary: {
+    padding: '5px 14px',
+    fontSize: 13,
+    fontWeight: 700,
+    borderRadius: 100,
+    border: 0,
+    background: 'var(--teal)',
+    color: 'var(--dark)',
     cursor: 'pointer',
   },
 } satisfies Record<string, React.CSSProperties>

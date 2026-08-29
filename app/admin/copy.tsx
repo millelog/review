@@ -21,11 +21,12 @@ export default function CopyLink({ url }: { url: string }) {
 
 const S = {
   button: {
-    padding: '3px 10px',
+    padding: '3px 12px',
     fontSize: 12,
-    borderRadius: 6,
-    border: '1px solid #ddd',
-    background: '#fff',
+    borderRadius: 100,
+    border: '1px solid var(--divider)',
+    background: 'transparent',
+    color: '#fff',
     cursor: 'pointer',
   },
 } satisfies Record<string, React.CSSProperties>

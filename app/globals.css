@@ -1,0 +1,35 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --teal: #2ac2c6;
+  --dark: #1e1e1e;
+  --card: #303030;
+  --divider: #3a3a3a;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body {
+  background: var(--dark);
+  color: #fff;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+input[type='checkbox'] {
+  accent-color: var(--teal);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #8a8a8a;
+}
