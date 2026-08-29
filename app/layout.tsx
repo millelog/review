@@ -1,5 +1,6 @@
 import './globals.css'
 import localFont from 'next/font/local'
+import { LOGO } from '@/lib/brand'
 
 const poppins = localFont({
   src: [
@@ -8,7 +9,18 @@ const poppins = localFont({
   ],
 })
 
-export const metadata = { title: 'Review — Cascade Online' }
+const title = 'Review — Cascade Online'
+const description = 'Preview your new site and leave feedback right on the page.'
+
+export const metadata = {
+  metadataBase: new URL(process.env.APP_URL ?? 'https://review.cascadeonline.dev'),
+  title,
+  description,
+  // ponytail: private links — keep them out of search results.
+  robots: { index: false, follow: false },
+  openGraph: { title, description, images: [LOGO], siteName: 'Cascade Online Design', type: 'website' },
+  twitter: { card: 'summary', title, description, images: [LOGO] },
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
