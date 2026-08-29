@@ -548,16 +548,19 @@ function ThreadPanel({
 }) {
   const [body, setBody] = useState('')
   const [saving, setSaving] = useState(false)
+  const replyRef = useRef<HTMLTextAreaElement>(null)
 
   return (
     <div
       style={{ ...S.compose, left: popoverLeft(at.x, width), top: at.y + 12, gap: 10 }}
       data-thread={thread.id}
     >
-      <Entry comment={thread} onClose={onClose} />
-      {thread.replies.map((r) => (
-        <Entry key={r.id} comment={r} />
-      ))}
+      <div style={S.threadScroll}>
+        <Entry comment={thread} onClose={onClose} />
+        {thread.replies.map((r) => (
+          <Entry key={r.id} comment={r} />
+        ))}
+      </div>
       <form
         style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
         onSubmit={async (e) => {
@@ -567,10 +570,12 @@ function ThreadPanel({
           setSaving(true)
           await onReply(thread.id, trimmed)
           setBody('')
+          if (replyRef.current) replyRef.current.style.height = '' // shrink back after posting
           setSaving(false)
         }}
       >
         <textarea
+          ref={replyRef}
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onInput={autoGrow}
@@ -621,9 +626,7 @@ function Entry({ comment, onClose }: { comment: Comment; onClose?: () => void })
           {size && ` · ${size}`}
         </span>
       </div>
-      <p style={{ margin: '3px 0 0', fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-        {comment.body}
-      </p>
+      <p style={{ ...S.commentBody, margin: '3px 0 0', fontSize: 13.5 }}>{comment.body}</p>
     </div>
   )
 }
@@ -668,11 +671,11 @@ function NamePrompt({
           onSubmit(trimmed)
         }}
       >
-        <img src={LOGO} alt="Cascade Online Design" height={30} style={{ marginBottom: 26 }} />
-        <div style={S.splashTitle}>You&rsquo;re invited to review a work-in-progress.</div>
+        <img src={LOGO} alt="Cascade Online Design" height={40} style={{ marginBottom: 26 }} />
+        <div style={S.splashTitle}>Preview your site and leave feedback</div>
         <p style={S.splashCopy}>
-          Browse the site exactly as it will ship, switch device sizes, and pin comments right on the
-          page. We see them instantly.
+          This is a preview of your site in progress. Browse it at different screen sizes, and click
+          anywhere on a page to leave a comment.
         </p>
         <div style={{ ...S.urlPill, display: 'inline-flex', width: 'auto', marginBottom: 24 }}>
           <Favicon origin={origin} />
@@ -752,7 +755,7 @@ function Sidebar({
             .map((t) => (
               <div key={t.id} style={S.item(openId === t.id)}>
                 <button type="button" style={S.itemBody} onClick={() => onSelect(t)}>
-                  <span style={{ fontSize: 13, lineHeight: 1.45 }}>{t.body}</span>
+                  <span style={{ ...S.commentBody, fontSize: 13 }}>{t.body}</span>
                   <span style={S.meta}>
                     <span style={S.dot(avatarColor(t.author, t.color))} />
                     {t.author}
@@ -856,6 +859,8 @@ const S = {
   page: { display: 'flex', flexDirection: 'column', height: '100dvh' },
   muted: { color: 'rgba(255,255,255,.55)', fontSize: 12 },
   ellipsis: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  // anywhere, not break-word: an unbroken 200-char run must break mid-word or it overflows the card
+  commentBody: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.5, minWidth: 0 },
 
   stage: {
     flex: 1,
@@ -1141,6 +1146,15 @@ const S = {
     padding: 16,
     borderRadius: 16,
     boxShadow: '0 20px 50px rgba(0,0,0,.45)',
+  },
+  threadScroll: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    overflowY: 'auto',
+    maxHeight: 'min(45vh, 400px)',
+    marginRight: -6,
+    paddingRight: 6,
   },
   textarea: {
     padding: '10px 12px',
