@@ -333,7 +333,8 @@ export default function Shell({
       {!name ? null : docked ? (
         <div className="dock" style={S.dock}>
           <button
-            style={S.dockChatBtn(commentMode)}
+            className={commentMode ? 'teal on' : 'teal'}
+            style={S.dockChatBtn}
             title={commentMode ? 'Cancel commenting' : 'Leave a comment'}
             onClick={() => {
               setPending(null)
@@ -342,7 +343,7 @@ export default function Shell({
           >
             <BubbleIcon />
           </button>
-          <button style={S.iconBtn} title="Open review panel" onClick={() => setDocked(false)}>
+          <button className="gray" style={S.iconBtn} title="Open review panel" onClick={() => setDocked(false)}>
             <Chevron up />
           </button>
         </div>
@@ -355,6 +356,7 @@ export default function Shell({
               <GripDots />
               <span style={{ flex: 1 }} />
               <button
+                className="gray"
                 style={S.iconBtn}
                 title="Minimize"
                 onPointerDown={(e) => e.stopPropagation()}
@@ -368,7 +370,12 @@ export default function Shell({
               <div style={S.label}>PREVIEW SIZE</div>
               <div style={S.segment}>
                 {(['desktop', 'tablet', 'mobile'] as const).map((v) => (
-                  <button key={v} style={S.vpBtn(viewport === v)} onClick={() => setViewport(v)}>
+                  <button
+                    key={v}
+                    className={viewport === v ? undefined : 'gray'}
+                    style={S.vpBtn(viewport === v)}
+                    onClick={() => setViewport(v)}
+                  >
                     <VpIcon kind={v} />
                     {v[0].toUpperCase() + v.slice(1)}
                   </button>
@@ -377,7 +384,8 @@ export default function Shell({
 
               <button
                 id="comment-mode"
-                style={S.commentBtn(commentMode)}
+                className={commentMode ? 'teal on' : 'teal'}
+                style={S.commentBtn}
                 onClick={() => {
                   setPending(null)
                   setCommentMode((on) => !on)
@@ -389,6 +397,7 @@ export default function Shell({
 
               <div style={S.cardFoot}>
                 <button
+                  className="gray"
                   style={S.mePill}
                   title="Edit your name and colour"
                   onClick={() => {
@@ -401,7 +410,7 @@ export default function Shell({
                   </span>
                   <span style={S.who}>{name || 'Guest reviewer'}</span>
                 </button>
-                <button style={S.feedbackBtn(panelOpen)} onClick={() => setPanelOpen((o) => !o)}>
+                <button className="gray" style={S.feedbackBtn(panelOpen)} onClick={() => setPanelOpen((o) => !o)}>
                   Feedback ({openCount})
                 </button>
               </div>
@@ -421,6 +430,7 @@ export default function Shell({
                       <button
                         key={c}
                         title={c}
+                        className="swatch"
                         style={S.swatch(c, avatarColor(name || 'G', color) === c)}
                         onClick={() => {
                           setColor(c)
@@ -485,11 +495,17 @@ function Compose({
       }}
     >
       <div style={{ display: 'flex', gap: 6 }}>
-        <button type="button" style={S.chip(type === 'comment')} onClick={() => setType('comment')}>
+        <button
+          type="button"
+          className={type === 'comment' ? undefined : 'gray'}
+          style={S.chip(type === 'comment')}
+          onClick={() => setType('comment')}
+        >
           Comment
         </button>
         <button
           type="button"
+          className={type === 'change_request' ? undefined : 'gray'}
           style={S.chip(type === 'change_request')}
           onClick={() => setType('change_request')}
         >
@@ -505,10 +521,10 @@ function Compose({
         style={S.textarea}
       />
       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-        <button type="button" style={S.ghost} onClick={onCancel}>
+        <button type="button" className="gray" style={S.ghost} onClick={onCancel}>
           Cancel
         </button>
-        <button type="submit" style={S.primary} disabled={saving}>
+        <button type="submit" className="teal" style={S.primary} disabled={saving}>
           Post comment
         </button>
       </div>
@@ -611,12 +627,13 @@ function ThreadPanel({
         <div style={{ display: 'flex', gap: 6 }}>
           <button
             type="button"
+            className="gray"
             style={S.secondary}
             onClick={() => onToggleResolved(thread.id)}
           >
             {thread.status === 'resolved' ? 'Reopen' : 'Resolve'}
           </button>
-          <button type="submit" style={{ ...S.primary, flex: 1 }} disabled={saving}>
+          <button type="submit" className="teal" style={{ ...S.primary, flex: 1 }} disabled={saving}>
             Reply
           </button>
         </div>
@@ -644,12 +661,12 @@ function Entry({
         <strong style={{ fontSize: 12.5, ...S.ellipsis }}>{comment.author}</strong>
         <span style={{ flex: 1 }} />
         {onDelete && (
-          <button type="button" title="Delete" style={{ ...S.iconBtn, padding: 3 }} onClick={onDelete}>
+          <button type="button" className="gray" title="Delete" style={{ ...S.iconBtn, padding: 3 }} onClick={onDelete}>
             <TrashIcon />
           </button>
         )}
         {onClose && (
-          <button type="button" title="Close" style={{ ...S.iconBtn, padding: 3 }} onClick={onClose}>
+          <button type="button" className="gray" title="Close" style={{ ...S.iconBtn, padding: 3 }} onClick={onClose}>
             <XIcon />
           </button>
         )}
@@ -731,7 +748,11 @@ function NamePrompt({
           placeholder="Jane Doe"
           style={S.input}
         />
-        <button type="submit" style={{ ...S.primary, width: '100%', padding: 13, fontSize: 14.5 }}>
+        <button
+          type="submit"
+          className="teal"
+          style={{ ...S.primary, width: '100%', padding: 13, fontSize: 14.5 }}
+        >
           Start reviewing
         </button>
       </form>
@@ -775,7 +796,7 @@ function Sidebar({
           />
           Show resolved
         </label>
-        <button style={S.iconBtn} onClick={onClose} title="Close">
+        <button className="gray" style={S.iconBtn} onClick={onClose} title="Close">
           <Chevron right />
         </button>
       </div>
@@ -788,7 +809,11 @@ function Sidebar({
           {visible
             .filter((t) => t.path === p)
             .map((t) => (
-              <div key={t.id} style={S.item(openId === t.id)}>
+              <div
+                key={t.id}
+                className={openId === t.id ? undefined : 'row'}
+                style={S.item(openId === t.id)}
+              >
                 <button type="button" style={S.itemBody} onClick={() => onSelect(t)}>
                   <span style={{ ...S.commentBody, fontSize: 13 }}>{t.body}</span>
                   <span style={S.meta}>
@@ -807,6 +832,7 @@ function Sidebar({
                   {outdated.includes(t.id) && <span style={S.badge('#a16207')}>outdated</span>}
                   <button
                     type="button"
+                    className="gray"
                     style={{ ...S.ghost, marginLeft: 'auto', fontSize: 12 }}
                     onClick={() => onToggleResolved(t.id)}
                   >
@@ -1005,7 +1031,6 @@ const S = {
     padding: 5,
     border: 0,
     borderRadius: 6,
-    background: 'none',
     color: 'rgba(255,255,255,.6)',
     cursor: 'pointer',
   },
@@ -1048,27 +1073,23 @@ const S = {
     fontFamily: 'inherit',
     fontSize: 10.5,
     fontWeight: 600,
-    background: active ? 'rgba(255,255,255,.92)' : 'transparent',
+    background: active ? 'rgba(255,255,255,.92)' : undefined,
     color: active ? DARK : 'rgba(255,255,255,.6)',
     transition: 'background .25s var(--ease-out-expo), color .25s',
   }),
-  commentBtn: (on: boolean) => ({
+  commentBtn: {
     width: '100%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    border: on ? '1.5px solid var(--teal)' : 'none',
-    background: on ? 'transparent' : 'var(--teal)',
-    color: on ? 'var(--teal)' : DARK,
     borderRadius: 100,
-    padding: on ? 10.5 : 12,
+    padding: 12.5,
     fontFamily: 'inherit',
     fontSize: 13.5,
     fontWeight: 700,
     cursor: 'pointer',
-    transition: 'background .25s, color .25s',
-  }),
+  },
   cardFoot: {
     display: 'flex',
     alignItems: 'center',
@@ -1097,9 +1118,10 @@ const S = {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    padding: 0,
+    padding: '3px 5px',
+    margin: '-3px -5px',
     border: 0,
-    background: 'none',
+    borderRadius: 9,
     font: 'inherit',
     textAlign: 'left',
     cursor: 'pointer',
@@ -1140,8 +1162,9 @@ const S = {
   who: { flex: 1, fontSize: 12, color: 'rgba(255,255,255,.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   feedbackBtn: (active: boolean) => ({
     border: 0,
-    background: 'none',
-    padding: 0,
+    padding: '3px 6px',
+    margin: '-3px -6px',
+    borderRadius: 8,
     fontFamily: 'inherit',
     fontSize: 11.5,
     fontWeight: 600,
@@ -1157,7 +1180,6 @@ const S = {
     display: 'flex',
     alignItems: 'center',
     gap: 7,
-    background: DARK,
     color: 'rgba(255,255,255,.65)',
     border: '1px solid rgba(255,255,255,.1)',
     borderBottom: 'none',
@@ -1166,15 +1188,7 @@ const S = {
     cursor: 'pointer',
     boxShadow: '0 -8px 30px rgba(0,0,0,.4)',
   },
-  dockChatBtn: (active: boolean) => ({
-    display: 'flex',
-    padding: 7,
-    border: 0,
-    borderRadius: '50%',
-    background: active ? 'rgba(42,194,198,.25)' : 'var(--teal)',
-    color: active ? 'var(--teal)' : DARK,
-    cursor: 'pointer',
-  }),
+  dockChatBtn: { display: 'flex', padding: 6, borderRadius: '50%', cursor: 'pointer' },
 
   compose: {
     position: 'absolute',
@@ -1222,7 +1236,7 @@ const S = {
     borderRadius: 100,
     cursor: 'pointer',
     border: `1px solid ${active ? 'transparent' : 'rgba(255,255,255,.14)'}`,
-    background: active ? 'var(--teal)' : 'transparent',
+    background: active ? 'var(--teal)' : undefined,
     color: active ? DARK : '#fff',
   }),
   ghost: {
@@ -1232,7 +1246,6 @@ const S = {
     borderRadius: 100,
     cursor: 'pointer',
     border: 0,
-    background: 'none',
     color: 'rgba(255,255,255,.65)',
   },
   secondary: {
@@ -1243,7 +1256,6 @@ const S = {
     fontWeight: 600,
     border: '1px solid rgba(255,255,255,.16)',
     borderRadius: 100,
-    background: 'none',
     color: 'rgba(255,255,255,.8)',
     cursor: 'pointer',
   },
@@ -1252,10 +1264,7 @@ const S = {
     fontSize: 12.5,
     fontFamily: 'inherit',
     fontWeight: 700,
-    border: 0,
     borderRadius: 100,
-    background: 'var(--teal)',
-    color: DARK,
     cursor: 'pointer',
   },
 
@@ -1344,7 +1353,7 @@ const S = {
     padding: '10px 12px',
     borderBottom: HAIRLINE,
     borderLeft: `2px solid ${active ? 'var(--teal)' : 'transparent'}`,
-    background: active ? 'rgba(42,194,198,.12)' : 'transparent',
+    background: active ? 'rgba(42,194,198,.12)' : undefined,
   }),
   itemBody: {
     display: 'flex',

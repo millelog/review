@@ -25,21 +25,72 @@ button:active {
   transform: scale(0.97);
 }
 
-/* lifts on hover; the matching padding-bottom refills the gap so it stays flush with the edge */
+/* stays flush with the edge; hover only deepens the shadow */
 .dock {
+  background: var(--dark);
   transition:
-    transform 0.18s var(--ease-out-expo),
-    padding-bottom 0.18s var(--ease-out-expo),
+    background 0.18s var(--ease-out-expo),
     box-shadow 0.18s var(--ease-out-expo);
 }
 
 .dock:hover {
-  transform: translateY(-7px);
-  padding-bottom: 13px;
+  background: #252525;
   box-shadow:
     0 -2px 8px rgba(0, 0, 0, 0.5),
-    0 -16px 34px rgba(0, 0, 0, 0.45),
-    0 -30px 70px rgba(0, 0, 0, 0.4);
+    0 -16px 34px rgba(0, 0, 0, 0.45);
+}
+
+/* highlighted buttons: translucent teal by default, solid teal when active */
+.teal {
+  background: rgba(42, 194, 198, 0.22);
+  color: var(--teal);
+  border: 1px solid rgba(42, 194, 198, 0.45);
+  transition:
+    background 0.16s linear,
+    border-color 0.16s linear,
+    color 0.16s linear;
+}
+
+.teal:hover {
+  background: rgba(42, 194, 198, 0.36);
+  border-color: rgba(42, 194, 198, 0.75);
+}
+
+.teal.on {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: var(--dark);
+}
+
+.teal.on:hover {
+  background: #55dcdf;
+  border-color: #55dcdf;
+}
+
+/* grayscale controls: a faint tint on hover */
+.gray {
+  background: none;
+  transition: background 0.15s linear;
+}
+
+.gray:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.row {
+  transition: background 0.15s linear;
+}
+
+.row:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.swatch {
+  transition: filter 0.15s linear;
+}
+
+.swatch:hover {
+  filter: brightness(1.2);
 }
 
 input[type='checkbox'] {
