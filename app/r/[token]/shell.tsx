@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Comment, CommentType } from '@/lib/db'
 import type { Thread } from '@/lib/comments'
 import { AVATAR_COLORS, avatarColor, LOGO } from '@/lib/brand'
+import { previewSize } from '@/lib/preview'
 
 const NAME_KEY = 'review:name'
 const COLOR_KEY = 'review:color'
@@ -58,6 +59,7 @@ export default function Shell({
   const frameRef = useRef<HTMLIFrameElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
   const threadsRef = useRef<Thread[]>([])
+  const focusRef = useRef<string | null>(null)
 
   const previewOrigin = useMemo(() => new URL(src).origin, [src])
 
@@ -218,10 +220,17 @@ export default function Shell({
     await load()
   }
 
-  /** Sidebar click: navigate the iframe to the comment's path, then highlight its pin. */
+  /** Sidebar click: restore the page, preview size and scroll position the comment was left at. */
   function focusThread(t: Thread) {
     if (t.status === 'resolved') setShowResolved(true)
-    if (t.path !== path && frameRef.current) frameRef.current.src = previewOrigin + t.path
+    const size = previewSize(t.viewport_width)
+    if (size) setViewport(size)
+    if (t.path !== path && frameRef.current) {
+      focusRef.current = t.selector // scrolled once the new page loads
+      frameRef.current.src = previewOrigin + t.path
+    } else if (t.selector) {
+      toFrame({ type: 'scroll-to', selector: t.selector })
+    }
     setOpenId(t.id)
   }
 
@@ -240,6 +249,10 @@ export default function Shell({
               setOutdated([])
               setLoadSeq((n) => n + 1)
               toFrame({ type: 'ping' })
+              if (focusRef.current) {
+                toFrame({ type: 'scroll-to', selector: focusRef.current })
+                focusRef.current = null
+              }
             }}
           />
           <div style={S.overlayLayer}>
@@ -248,7 +261,7 @@ export default function Shell({
                 <button
                   key={t.id}
                   data-pin={t.id}
-                  style={S.pinButton(positions[t.id], t.type === 'change_request', openId === t.id)}
+                  style={S.pinButton(positions[t.id], avatarColor(t.author, t.color), openId === t.id)}
                   onClick={() => setOpenId((id) => (id === t.id ? null : t.id))}
                 >
                   {pins.indexOf(t) + 1}
@@ -270,7 +283,14 @@ export default function Shell({
 
           {pending && (
             <div style={S.catcher} onClick={() => setPending(null)}>
-              <div style={{ ...S.pin, left: pending.x, top: pending.y }} />
+              <div
+                style={{
+                  ...S.pin,
+                  left: pending.x,
+                  top: pending.y,
+                  background: avatarColor(name || 'G', color),
+                }}
+              />
               <Compose pending={pending} onSave={save} onCancel={() => setPending(null)} />
             </div>
           )}
@@ -332,13 +352,6 @@ export default function Shell({
             </div>
 
             <div style={{ padding: '14px 16px 16px' }}>
-              <div style={S.urlPill}>
-                <img src="/mark.png" alt="" width={14} height={14} />
-                <span style={S.ellipsis}>{project}</span>
-                <span style={{ opacity: 0.45 }}>·</span>
-                <span style={S.ellipsis}>{branch}</span>
-              </div>
-
               <div style={S.label}>PREVIEW SIZE</div>
               <div style={S.segment}>
                 {(['desktop', 'tablet', 'mobile'] as const).map((v) => (
@@ -499,6 +512,12 @@ function stamp(created: string) {
   return new Date(created.replace(' ', 'T') + 'Z').toLocaleString()
 }
 
+/** "Mobile" / "Tablet" / "Desktop", or null for replies and pre-tracking comments. */
+function sizeLabel(width: number) {
+  const size = previewSize(width)
+  return size && size[0].toUpperCase() + size.slice(1)
+}
+
 function ThreadPanel({
   thread,
   at,
@@ -573,7 +592,10 @@ function Entry({
         </span>
         <strong style={{ fontSize: 12.5 }}>{comment.author}</strong>
         {comment.type === 'change_request' && <span style={S.chip(true)}>Change request</span>}
-        <span style={{ ...S.muted, fontSize: 11 }}>{stamp(comment.created_at)}</span>
+        <span style={{ ...S.muted, fontSize: 11 }}>
+          {stamp(comment.created_at)}
+          {sizeLabel(comment.viewport_width) && ` · ${sizeLabel(comment.viewport_width)}`}
+        </span>
         {onToggleResolved && (
           <button
             type="button"
@@ -724,13 +746,14 @@ function Sidebar({
                   <span style={S.meta}>
                     <span style={S.dot(avatarColor(t.author, t.color))} />
                     {t.author}
+                    {sizeLabel(t.viewport_width) && ` · ${sizeLabel(t.viewport_width)}`}
                     {t.replies.length > 0 &&
                       ` · ${t.replies.length} repl${t.replies.length === 1 ? 'y' : 'ies'}`}
                   </span>
                 </button>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                  {t.type === 'change_request' && <span style={S.badge('#f97316')}>Change request</span>}
-                  <span style={S.badge(t.status === 'resolved' ? '#16a34a' : '#64748b')}>
+                  {t.type === 'change_request' && <span style={S.badge('#c2410c')}>Change request</span>}
+                  <span style={S.badge(t.status === 'resolved' ? '#15803d' : '#475569')}>
                     {t.status}
                   </span>
                   {outdated.includes(t.id) && <span style={S.badge('#a16207')}>outdated</span>}
@@ -834,7 +857,7 @@ const S = {
   catcher: { position: 'absolute', inset: 0 },
   overlayLayer: { position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' },
 
-  pinButton: (at: { x: number; y: number }, change: boolean, open: boolean) => ({
+  pinButton: (at: { x: number; y: number }, color: string, open: boolean) => ({
     position: 'absolute',
     left: at.x,
     top: at.y,
@@ -848,8 +871,8 @@ const S = {
     fontFamily: 'inherit',
     fontSize: 12,
     fontWeight: 700,
-    color: DARK,
-    background: change ? '#f97316' : 'var(--teal)',
+    color: '#fff',
+    background: color,
     border: open ? '2px solid #fff' : '2px solid rgba(255,255,255,.85)',
     outline: open ? '2px solid var(--teal)' : 'none',
     boxShadow: '0 4px 12px rgba(0,0,0,.35)',
@@ -997,7 +1020,7 @@ const S = {
     borderRadius: '50%',
     background: color,
     border: '1px solid rgba(255,255,255,.2)',
-    color: DARK,
+    color: '#fff',
     fontSize: 10.5,
     fontWeight: 700,
   }),

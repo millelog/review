@@ -1,16 +1,16 @@
 export const LOGO =
   'https://imagedelivery.net/zqlO_f93Gilxz6zHS6qT_w/db0fec33-1eec-4867-e8bc-b3f063c84700/w=250'
 
-/** Reviewer avatar palette — the only colours accepted from the client. */
+/** Reviewer avatar palette — the only colours accepted from the client. All legible under white text. */
 export const AVATAR_COLORS = [
-  '#2ac2c6',
-  '#60a5fa',
-  '#a78bfa',
-  '#f472b6',
-  '#f97316',
-  '#facc15',
-  '#4ade80',
-  '#94a3b8',
+  '#0f766e',
+  '#2563eb',
+  '#7c3aed',
+  '#db2777',
+  '#c2410c',
+  '#a16207',
+  '#15803d',
+  '#475569',
 ]
 
 /** A reviewer's chosen colour, or a stable one hashed from their name. */

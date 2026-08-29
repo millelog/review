@@ -1,6 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { slugBranch, previewUrl } from './preview.ts'
+import { slugBranch, previewUrl, previewSize } from './preview.ts'
+
+test('previewSize buckets the recorded width', () => {
+  assert.equal(previewSize(0), null)
+  assert.equal(previewSize(375), 'mobile')
+  assert.equal(previewSize(753), 'tablet')
+  assert.equal(previewSize(1440), 'desktop')
+})
 
 test('slugBranch follows Vercel alias rules', () => {
   assert.equal(slugBranch('main'), 'main')

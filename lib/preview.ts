@@ -7,6 +7,14 @@ export function slugBranch(branch: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+/** Which preview frame a comment was left in, from the width it recorded. Null for pre-tracking rows. */
+export function previewSize(width: number): 'mobile' | 'tablet' | 'desktop' | null {
+  if (!width) return null
+  if (width <= 430) return 'mobile'
+  if (width <= 820) return 'tablet'
+  return 'desktop'
+}
+
 export function previewUrl(vercelProject: string, branch: string, vercelTeam: string): string {
   return `https://${vercelProject}-git-${slugBranch(branch)}-${vercelTeam}.vercel.app`
 }

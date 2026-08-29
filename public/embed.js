@@ -166,6 +166,13 @@
     } else if (msg.type === 'track') {
       tracked = msg.pins || []
       reportPositions()
+    } else if (msg.type === 'scroll-to') {
+      var target = null
+      try {
+        target = document.querySelector(msg.selector)
+      } catch (e) {}
+      if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      schedulePositions()
     } else if (msg.type === 'ping') {
       lastPath = null
       reportPath()
