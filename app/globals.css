@@ -25,6 +25,18 @@ button:active {
   transform: scale(0.97);
 }
 
+/* grows upward on hover rather than translating, so it stays flush with the viewport edge */
+.dock {
+  transition:
+    padding-bottom 0.18s var(--ease-out-expo),
+    box-shadow 0.18s var(--ease-out-expo);
+}
+
+.dock:hover {
+  padding-bottom: 11px;
+  box-shadow: 0 -14px 44px rgba(0, 0, 0, 0.55);
+}
+
 input[type='checkbox'] {
   accent-color: var(--teal);
 }
@@ -32,4 +44,44 @@ input[type='checkbox'] {
 input::placeholder,
 textarea::placeholder {
   color: #8a8a8a;
+}
+
+/* ponytail: hover/focus stands in for "actively scrolling" — CSS can't see scroll events. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+
+textarea {
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.2s linear;
+}
+
+textarea:hover,
+textarea:focus {
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+textarea::-webkit-scrollbar-thumb {
+  background: transparent;
+  transition: background 0.2s linear;
+}
+
+textarea:hover::-webkit-scrollbar-thumb,
+textarea:focus::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
 }

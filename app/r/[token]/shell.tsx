@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { Comment, CommentType } from '@/lib/db'
 import type { Thread } from '@/lib/comments'
 import { AVATAR_COLORS, avatarColor, LOGO } from '@/lib/brand'
@@ -317,9 +317,9 @@ export default function Shell({
       )}
 
       {!name ? null : docked ? (
-        <div style={S.dock}>
+        <div className="dock" style={S.dock}>
           <button
-            style={{ ...S.iconBtn, color: commentMode ? 'var(--teal)' : S.iconBtn.color }}
+            style={S.dockChatBtn(commentMode)}
             title={commentMode ? 'Cancel commenting' : 'Leave a comment'}
             onClick={() => {
               setPending(null)
@@ -331,7 +331,6 @@ export default function Shell({
           <button style={S.iconBtn} title="Open review panel" onClick={() => setDocked(false)}>
             <Chevron up />
           </button>
-          {openCount > 0 && <span style={S.dockBadge}>{openCount}</span>}
         </div>
       ) : (
         <div ref={cardRef} style={S.cardWrap(cardPos, panelOpen)}>
@@ -487,6 +486,7 @@ function Compose({
         autoFocus
         value={body}
         onChange={(e) => setBody(e.target.value)}
+        onInput={autoGrow}
         placeholder="What needs to change here?"
         style={S.textarea}
       />
@@ -502,14 +502,27 @@ function Compose({
   )
 }
 
+/** Grows with the text up to a few lines, then scrolls. */
+function autoGrow(e: FormEvent<HTMLTextAreaElement>) {
+  const el = e.currentTarget
+  el.style.height = 'auto'
+  const borders = el.offsetHeight - el.clientHeight // border-box height needs them back
+  el.style.height = `${Math.min(el.scrollHeight + borders, 160)}px`
+}
+
 /** Popover sits right of the anchor, flipping left when it would overflow the preview. */
 function popoverLeft(x: number, frameWidth: number) {
-  const flip = x + 20 + 280 > frameWidth
-  return Math.max(8, flip ? x - 288 : x + 20)
+  const flip = x + 20 + CARD_W + 12 > frameWidth
+  return Math.max(8, flip ? x - (CARD_W + 20) : x + 20)
 }
 
 function stamp(created: string) {
-  return new Date(created.replace(' ', 'T') + 'Z').toLocaleString()
+  return new Date(created.replace(' ', 'T') + 'Z').toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 /** "Mobile" / "Tablet" / "Desktop", or null for replies and pre-tracking comments. */
@@ -541,11 +554,7 @@ function ThreadPanel({
       style={{ ...S.compose, left: popoverLeft(at.x, width), top: at.y + 12, gap: 10 }}
       data-thread={thread.id}
     >
-      <Entry
-        comment={thread}
-        onClose={onClose}
-        onToggleResolved={() => onToggleResolved(thread.id)}
-      />
+      <Entry comment={thread} onClose={onClose} />
       {thread.replies.map((r) => (
         <Entry key={r.id} comment={r} />
       ))}
@@ -564,54 +573,55 @@ function ThreadPanel({
         <textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
+          onInput={autoGrow}
           placeholder="Reply…"
           style={{ ...S.textarea, minHeight: 44 }}
         />
-        <button type="submit" style={S.primary} disabled={saving}>
-          Reply
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            type="button"
+            style={S.secondary}
+            onClick={() => onToggleResolved(thread.id)}
+          >
+            {thread.status === 'resolved' ? 'Reopen' : 'Resolve'}
+          </button>
+          <button type="submit" style={{ ...S.primary, flex: 1 }} disabled={saving}>
+            Reply
+          </button>
+        </div>
       </form>
     </div>
   )
 }
 
-function Entry({
-  comment,
-  onClose,
-  onToggleResolved,
-}: {
-  comment: Comment
-  onClose?: () => void
-  onToggleResolved?: () => void
-}) {
+function Entry({ comment, onClose }: { comment: Comment; onClose?: () => void }) {
+  const size = sizeLabel(comment.viewport_width)
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={S.avatar(avatarColor(comment.author, comment.color))}>
           {comment.author[0].toUpperCase()}
         </span>
-        <strong style={{ fontSize: 12.5 }}>{comment.author}</strong>
-        {comment.type === 'change_request' && <span style={S.chip(true)}>Change request</span>}
-        <span style={{ ...S.muted, fontSize: 11 }}>
-          {stamp(comment.created_at)}
-          {sizeLabel(comment.viewport_width) && ` · ${sizeLabel(comment.viewport_width)}`}
-        </span>
-        {onToggleResolved && (
+        <strong style={{ fontSize: 12.5, ...S.ellipsis }}>{comment.author}</strong>
+        {onClose && (
           <button
             type="button"
-            style={{ ...S.ghost, marginLeft: 'auto' }}
-            onClick={onToggleResolved}
+            title="Close"
+            style={{ ...S.iconBtn, marginLeft: 'auto', padding: 3 }}
+            onClick={onClose}
           >
-            {comment.status === 'resolved' ? 'Reopen' : 'Resolve'}
-          </button>
-        )}
-        {onClose && (
-          <button type="button" style={S.ghost} onClick={onClose}>
-            Close
+            <XIcon />
           </button>
         )}
       </div>
-      <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        {comment.type === 'change_request' && <span style={S.chip(true)}>Change request</span>}
+        <span style={{ ...S.muted, fontSize: 11 }}>
+          {stamp(comment.created_at)}
+          {size && ` · ${size}`}
+        </span>
+      </div>
+      <p style={{ margin: '3px 0 0', fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
         {comment.body}
       </p>
     </div>
@@ -822,6 +832,14 @@ function VpIcon({ kind }: { kind: Viewport }) {
   )
 }
 
+function XIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" {...stroke}>
+      <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" />
+    </svg>
+  )
+}
+
 function BubbleIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" {...stroke}>
@@ -830,6 +848,7 @@ function BubbleIcon() {
   )
 }
 
+const CARD_W = 324
 const DARK = '#1e1e1e'
 const HAIRLINE = '1px solid rgba(255,255,255,.09)'
 
@@ -1094,37 +1113,32 @@ const S = {
     color: 'rgba(255,255,255,.65)',
     border: '1px solid rgba(255,255,255,.1)',
     borderBottom: 'none',
-    borderTop: '2px solid var(--teal)',
     borderRadius: '12px 12px 0 0',
     padding: '4px 11px 6px',
     cursor: 'pointer',
     boxShadow: '0 -8px 30px rgba(0,0,0,.4)',
   },
-  dockBadge: {
+  dockChatBtn: (active: boolean) => ({
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 16,
-    height: 16,
-    padding: '0 4px',
+    padding: 6,
+    border: 0,
     borderRadius: 8,
-    background: 'var(--teal)',
-    color: DARK,
-    fontSize: 10,
-    fontWeight: 700,
-  },
+    background: active ? 'rgba(42,194,198,.25)' : 'var(--teal)',
+    color: active ? 'var(--teal)' : DARK,
+    cursor: 'pointer',
+  }),
 
   compose: {
     position: 'absolute',
     zIndex: 22,
-    width: 268,
+    width: CARD_W,
     display: 'flex',
     flexDirection: 'column',
     gap: 8,
     background: DARK,
     color: '#fff',
     border: '1px solid rgba(255,255,255,.1)',
-    padding: 14,
+    padding: 16,
     borderRadius: 16,
     boxShadow: '0 20px 50px rgba(0,0,0,.45)',
   },
@@ -1136,14 +1150,18 @@ const S = {
     color: '#fff',
     border: '1px solid rgba(255,255,255,.14)',
     borderRadius: 10,
-    resize: 'vertical',
+    resize: 'none',
     minHeight: 72,
+    maxHeight: 160,
+    lineHeight: 1.45,
     outline: 'none',
   },
   chip: (active: boolean) => ({
     padding: '3px 10px',
     fontSize: 11,
     fontFamily: 'inherit',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
     borderRadius: 100,
     cursor: 'pointer',
     border: `1px solid ${active ? 'transparent' : 'rgba(255,255,255,.14)'}`,
@@ -1159,6 +1177,18 @@ const S = {
     border: 0,
     background: 'none',
     color: 'rgba(255,255,255,.65)',
+  },
+  secondary: {
+    flex: 1,
+    padding: '8px 12px',
+    fontSize: 12.5,
+    fontFamily: 'inherit',
+    fontWeight: 600,
+    border: '1px solid rgba(255,255,255,.16)',
+    borderRadius: 100,
+    background: 'none',
+    color: 'rgba(255,255,255,.8)',
+    cursor: 'pointer',
   },
   primary: {
     padding: '8px 16px',
