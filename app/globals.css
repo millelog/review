@@ -141,3 +141,41 @@ textarea:hover::-webkit-scrollbar-thumb,
 textarea:focus::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.16);
 }
+
+/* entrance animations */
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+}
+
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.92); }
+}
+
+@keyframes pin-plant {
+  0% { transform: translate(-50%, -100%) scale(0); }
+  60% { transform: translate(-50%, -100%) scale(1.12); }
+  100% { transform: translate(-50%, -100%) scale(1); }
+}
+
+@keyframes drop-in {
+  from { opacity: 0; transform: translate(-50%, -16px); }
+}
+
+.overlay-in { animation: fade-in 300ms ease-out; }
+.splash-in { animation: rise-in 420ms var(--ease-out-expo); }
+.pop-in { animation: pop-in 250ms var(--ease-out-expo) backwards; }
+.pin-plant { animation: pin-plant 320ms var(--ease-out-expo) backwards; transform-origin: 50% 100%; }
+.hint-drop { animation: drop-in 300ms var(--ease-out-expo); }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,6 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type RefObject,
+} from 'react'
 import type { Comment, CommentType } from '@/lib/db'
 import type { Thread } from '@/lib/comments'
 import { AVATAR_COLORS, avatarColor, LOGO } from '@/lib/brand'
@@ -56,8 +65,12 @@ export default function Shell({
   const [outdated, setOutdated] = useState<number[]>([])
   const [loadSeq, setLoadSeq] = useState(0)
   const [showResolved, setShowResolved] = useState(false)
+  const [splashLeaving, setSplashLeaving] = useState(false)
+  const [dockAnim, setDockAnim] = useState<'min' | 'max' | null>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
+  const dockRef = useRef<HTMLDivElement>(null)
+  const splashRef = useRef<HTMLFormElement>(null)
   const threadsRef = useRef<Thread[]>([])
   const focusRef = useRef<string | null>(null)
 
@@ -158,6 +171,72 @@ export default function Shell({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  /** Splash exit: fly the splash onto the card's rect while the card scales up to catch it. */
+  useLayoutEffect(() => {
+    if (!splashLeaving) return
+    const splash = splashRef.current
+    const card = cardRef.current
+    const done = () => setSplashLeaving(false)
+    if (!splash || !card || reducedMotion()) return done()
+    const s = splash.getBoundingClientRect()
+    const c = card.getBoundingClientRect()
+    const dx = c.left + c.width / 2 - (s.left + s.width / 2)
+    const dy = c.top + c.height / 2 - (s.top + s.height / 2)
+    splash.animate(
+      [
+        { transform: 'none', opacity: 1 },
+        { opacity: 1, offset: 0.55 },
+        {
+          transform: `translate(${dx}px, ${dy}px) scale(${c.width / s.width}, ${c.height / s.height})`,
+          opacity: 0,
+        },
+      ],
+      { duration: 620, easing: EXPO, fill: 'forwards' },
+    )
+    card
+      .animate(
+        [
+          { transform: 'scale(.72)', opacity: 0 },
+          { transform: 'scale(.72)', opacity: 0, offset: 0.5 },
+          { transform: 'scale(1)', opacity: 1 },
+        ],
+        { duration: 700, easing: EXPO },
+      )
+      .finished.then(done, done)
+  }, [splashLeaving])
+
+  /** Minimize/maximize: the card flies into the dock (or back out) while the dock rises/sinks. */
+  useLayoutEffect(() => {
+    if (!dockAnim) return
+    const card = cardRef.current
+    const dock = dockRef.current
+    const done = () => setDockAnim(null)
+    if (!card || !dock || reducedMotion()) return done()
+    const c = card.getBoundingClientRect()
+    const d = dock.getBoundingClientRect()
+    const dx = d.left + d.width / 2 - (c.left + c.width / 2)
+    const dy = d.top + d.height / 2 - (c.top + c.height / 2)
+    const flight = [
+      { transform: 'none', opacity: 1 },
+      { opacity: 0.9, offset: 0.5 },
+      {
+        transform: `translate(${dx}px, ${dy}px) scale(${d.width / c.width}, ${d.height / c.height})`,
+        opacity: 0,
+      },
+    ]
+    const rise = [
+      { transform: 'translateY(110%)', opacity: 0 },
+      { transform: 'none', opacity: 1 },
+    ]
+    if (dockAnim === 'min') {
+      card.animate(flight, { duration: 420, easing: EXPO, fill: 'forwards' }).finished.then(done, done)
+      dock.animate(rise, { duration: 280, delay: 140, easing: EXPO, fill: 'backwards' })
+    } else {
+      dock.animate([...rise].reverse(), { duration: 200, easing: 'ease-in', fill: 'forwards' })
+      card.animate([...flight].reverse(), { duration: 420, easing: EXPO }).finished.then(done, done)
+    }
+  }, [dockAnim])
 
   /** Drag the panel by its header, clamped to the viewport. */
   function onHeaderDown(e: React.PointerEvent) {
@@ -273,7 +352,11 @@ export default function Shell({
                 <button
                   key={t.id}
                   data-pin={t.id}
-                  style={S.pinButton(positions[t.id], avatarColor(t.author, t.color), openId === t.id)}
+                  className="pin-plant"
+                  style={{
+                    ...S.pinButton(positions[t.id], avatarColor(t.author, t.color), openId === t.id),
+                    animationDelay: `${pins.indexOf(t) * 30}ms`,
+                  }}
                   onClick={() => setOpenId((id) => (id === t.id ? null : t.id))}
                 >
                   {pins.indexOf(t) + 1}
@@ -284,6 +367,7 @@ export default function Shell({
 
           {openThread && positions[openThread.id] && (
             <ThreadPanel
+              key={openThread.id}
               thread={openThread}
               at={positions[openThread.id]}
               width={frameRef.current?.clientWidth || 0}
@@ -298,6 +382,7 @@ export default function Shell({
           {pending && (
             <div style={S.catcher} onClick={() => setPending(null)}>
               <div
+                className="pin-plant"
                 style={{
                   ...S.pin,
                   left: pending.x,
@@ -324,14 +409,14 @@ export default function Shell({
       </div>
 
       {commentMode && (
-        <div style={S.hint}>
+        <div className="hint-drop" style={S.hint}>
           <span style={S.hintDot} />
           Click anywhere on the page to pin a comment · Esc to cancel
         </div>
       )}
 
-      {!name ? null : docked ? (
-        <div className="dock" style={S.dock}>
+      {name && (docked || dockAnim) && (
+        <div ref={dockRef} className="dock" style={S.dock}>
           <button
             className={commentMode ? 'teal on' : 'teal'}
             style={S.dockChatBtn}
@@ -343,11 +428,15 @@ export default function Shell({
           >
             <BubbleIcon />
           </button>
-          <button className="gray" style={S.iconBtn} title="Open review panel" onClick={() => setDocked(false)}>
+          <button className="gray" style={S.iconBtn} title="Open review panel" onClick={() => {
+              setDocked(false)
+              setDockAnim('max')
+            }}>
             <Chevron up />
           </button>
         </div>
-      ) : (
+      )}
+      {name && (!docked || dockAnim) && (
         <div ref={cardRef} style={S.cardWrap(cardPos, panelOpen)}>
           <div style={S.card}>
             <div style={S.cardHead(dragging)} onPointerDown={onHeaderDown}>
@@ -360,7 +449,10 @@ export default function Shell({
                 style={S.iconBtn}
                 title="Minimize"
                 onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => setDocked(true)}
+                onClick={() => {
+                  setDocked(true)
+                  setDockAnim('min')
+                }}
               >
                 <Chevron />
               </button>
@@ -446,16 +538,24 @@ export default function Shell({
         </div>
       )}
 
-      {ready && !name && (
-        <NamePrompt project={project} branch={branch} origin={previewOrigin} onSubmit={saveName} />
+      {ready && (!name || splashLeaving) && (
+        <NamePrompt
+          project={project}
+          branch={branch}
+          origin={previewOrigin}
+          leaving={splashLeaving}
+          formRef={splashRef}
+          onSubmit={saveName}
+        />
       )}
     </div>
   )
 
-  /** Delayed so the splash can play its collapse-into-the-panel transition. */
+  /** Mounts the card immediately; the splash-exit effect above choreographs the handoff. */
   function saveName(value: string) {
     localStorage.setItem(NAME_KEY, value)
-    setTimeout(() => setName(value), 480)
+    setName(value)
+    setSplashLeaving(true)
   }
 
   /** Blank input keeps the previous name — an empty one would re-trigger the splash. */
@@ -484,7 +584,13 @@ function Compose({
 
   return (
     <form
-      style={{ ...S.compose, left, top: pending.y + 12 }}
+      className="pop-in"
+      style={{
+        ...S.compose,
+        left,
+        top: pending.y + 12,
+        transformOrigin: left > pending.x ? 'top left' : 'top right',
+      }}
       onClick={(e) => e.stopPropagation()}
       onSubmit={(e) => {
         e.preventDefault()
@@ -584,9 +690,18 @@ function ThreadPanel({
   const [saving, setSaving] = useState(false)
   const replyRef = useRef<HTMLTextAreaElement>(null)
 
+  const left = popoverLeft(at.x, width)
+
   return (
     <div
-      style={{ ...S.compose, left: popoverLeft(at.x, width), top: at.y + 12, gap: 10 }}
+      className="pop-in"
+      style={{
+        ...S.compose,
+        left,
+        top: at.y + 12,
+        gap: 10,
+        transformOrigin: left > at.x ? 'top left' : 'top right',
+      }}
       data-thread={thread.id}
     >
       <div style={S.threadScroll}>
@@ -702,24 +817,28 @@ function NamePrompt({
   project,
   branch,
   origin,
+  leaving,
+  formRef,
   onSubmit,
 }: {
   project: string
   branch: string
   origin: string
+  leaving: boolean
+  formRef: RefObject<HTMLFormElement | null>
   onSubmit: (name: string) => void
 }) {
   const [value, setValue] = useState('')
-  const [leaving, setLeaving] = useState(false)
   return (
-    <div style={S.overlay(leaving)}>
+    <div className="overlay-in" style={S.overlay(leaving)}>
       <form
-        style={S.splash(leaving)}
+        ref={formRef}
+        className="splash-in"
+        style={S.splash}
         onSubmit={(e) => {
           e.preventDefault()
           const trimmed = value.trim()
-          if (!trimmed) return
-          setLeaving(true)
+          if (!trimmed || leaving) return
           onSubmit(trimmed)
         }}
       >
@@ -921,6 +1040,8 @@ function BubbleIcon() {
 }
 
 const CARD_W = 324
+const EXPO = 'cubic-bezier(0.16, 1, 0.3, 1)'
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
 const DARK = '#1e1e1e'
 const HAIRLINE = '1px solid rgba(255,255,255,.09)'
 
@@ -1005,7 +1126,9 @@ const S = {
     position: 'fixed',
     zIndex: 40,
     touchAction: 'none',
-    ...(pos ? { left: pos.x, top: pos.y } : { right: sidebar ? 324 : 24, bottom: 24 }),
+    ...(pos
+      ? { left: pos.x, top: pos.y }
+      : { right: sidebar ? 324 : 24, bottom: 24, transition: 'right 300ms var(--ease-out-expo)' }),
   }),
   card: {
     width: 288,
@@ -1279,7 +1402,7 @@ const S = {
     transition: 'background 500ms var(--ease-out-expo), backdrop-filter 500ms var(--ease-out-expo)',
     pointerEvents: leaving ? 'none' : 'auto',
   }),
-  splash: (leaving: boolean) => ({
+  splash: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'flex-start',
@@ -1291,10 +1414,7 @@ const S = {
     borderRadius: 24,
     padding: '38px 38px 32px',
     boxShadow: '0 40px 100px rgba(0,0,0,.55)',
-    transform: leaving ? 'translate(35vw, 35vh) scale(.1)' : 'none',
-    opacity: leaving ? 0 : 1,
-    transition: 'transform 560ms var(--ease-out-expo), opacity 420ms 80ms var(--ease-out-expo)',
-  }),
+  },
   splashTitle: { fontSize: 22, fontWeight: 700, lineHeight: 1.25, marginBottom: 8 },
   splashCopy: {
     margin: '0 0 22px',
