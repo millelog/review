@@ -350,7 +350,7 @@ export default function Shell({
         <div ref={cardRef} style={S.cardWrap(cardPos, panelOpen)}>
           <div style={S.card}>
             <div style={S.cardHead(dragging)} onPointerDown={onHeaderDown}>
-              <img src={LOGO} alt="Cascade Online" height={15} style={{ pointerEvents: 'none' }} />
+              <img src={LOGO} alt="Cascade Online" height={22} style={{ pointerEvents: 'none' }} />
               <span style={{ flex: 1 }} />
               <GripDots />
               <span style={{ flex: 1 }} />
@@ -832,8 +832,8 @@ const stroke = {
 function Chevron({ up, right }: { up?: boolean; right?: boolean }) {
   return (
     <svg
-      width="14"
-      height="14"
+      width="16"
+      height="16"
       viewBox="0 0 14 14"
       {...stroke}
       style={{ transform: up ? 'rotate(180deg)' : right ? 'rotate(-90deg)' : undefined }}
@@ -845,7 +845,7 @@ function Chevron({ up, right }: { up?: boolean; right?: boolean }) {
 
 function GripDots() {
   return (
-    <svg width="10" height="14" viewBox="0 0 10 14" style={{ opacity: 0.35 }}>
+    <svg width="11" height="16" viewBox="0 0 10 14" style={{ opacity: 0.35 }}>
       {[2.5, 7, 11.5].map((cy) =>
         [2.5, 7.5].map((cx) => <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.4" fill="#fff" />),
       )}
@@ -994,7 +994,7 @@ const S = {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    padding: '12px 12px 12px 16px',
+    padding: '11px 12px 11px 16px', // trimmed to hold the header height as the logo and icons grew
     cursor: dragging ? 'grabbing' : 'grab',
     borderBottom: '1px solid rgba(255,255,255,.07)',
     background: 'rgba(255,255,255,.03)',
