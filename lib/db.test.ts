@@ -32,5 +32,4 @@ test('insert project, token and comment, read back', () => {
   const token = db.prepare('SELECT * FROM tokens WHERE token = ?').get('abcd1234') as Record<string, unknown>
   assert.equal(token.project_id, projectId)
   assert.equal(token.revoked_at, null)
-  assert.equal(token.last_notified_at, null)
 })

@@ -1,6 +1,5 @@
 import type { NextRequest } from 'next/server'
 import { ApiError, createComment, listThreads } from '@/lib/comments'
-import { notify } from '@/lib/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,7 +20,6 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const comment = createComment(await request.json().catch(() => ({})))
-    void notify(comment.token).catch((error) => console.error('notify failed', error))
     return Response.json({ comment }, { status: 201 })
   } catch (error) {
     return fail(error)

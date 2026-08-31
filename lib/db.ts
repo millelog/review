@@ -17,7 +17,6 @@ export type Token = {
   branch: string
   created_at: string
   revoked_at: string | null
-  last_notified_at: string | null
 }
 
 import type { CommentType } from './types.ts'
@@ -59,8 +58,7 @@ CREATE TABLE IF NOT EXISTS tokens (
   project_id INTEGER NOT NULL REFERENCES projects(id),
   branch TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  revoked_at TEXT,
-  last_notified_at TEXT
+  revoked_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS comments (
@@ -86,6 +84,8 @@ CREATE TABLE IF NOT EXISTS comments (
 CREATE INDEX IF NOT EXISTS comments_scope ON comments (project_id, branch);
 CREATE INDEX IF NOT EXISTS comments_parent ON comments (parent_id);
 CREATE INDEX IF NOT EXISTS tokens_project ON tokens (project_id);
+
+CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `
 
 let instance: Database.Database | null = null

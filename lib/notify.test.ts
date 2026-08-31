@@ -7,7 +7,7 @@ import { join } from 'node:path'
 process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'review-')), 'test.db')
 const { getDb } = await import('./db.ts')
 const { createComment } = await import('./comments.ts')
-const { notify } = await import('./notify.ts')
+const { sweep } = await import('./notify.ts')
 
 const db = getDb()
 const projectId = Number(
@@ -17,57 +17,102 @@ const projectId = Number(
 )
 db.prepare('INSERT INTO tokens (token, project_id, branch) VALUES (?, ?, ?)').run('tok11111', projectId, 'feature/x')
 
-const sent: { subject: string; text: string }[] = []
-const send = async (subject: string, text: string) => void sent.push({ subject, text })
+const sent: { subject: string; text: string; thread: string }[] = []
+const send = async (subject: string, text: string, thread: string) => void sent.push({ subject, text, thread })
+const boom = async () => {
+  throw new Error('sendgrid down')
+}
 const post = (body: string) => createComment({ token: 'tok11111', path: '/', author: 'Dana', body })
+const backdate = (body: string, minutes: number) =>
+  db.prepare("UPDATE comments SET created_at = datetime('now', ?) WHERE body = ?").run(`-${minutes} minutes`, body)
 const unnotified = () =>
-  (db.prepare("SELECT COUNT(*) AS n FROM comments WHERE notified_at IS NULL").get() as { n: number }).n
-/** Pretends the debounce window has elapsed. */
-const expireWindow = () =>
-  db.prepare("UPDATE tokens SET last_notified_at = datetime('now', '-11 minutes') WHERE token = ?").run('tok11111')
+  (db.prepare('SELECT COUNT(*) AS n FROM comments WHERE notified_at IS NULL').get() as { n: number }).n
+const recapAt = () => (db.prepare("SELECT value FROM kv WHERE key = 'recap_at'").get() as { value: string } | undefined)?.value
 
-test('first comment notifies immediately', async () => {
+// Fixed offsets keep these on today's LA date whether or not DST is in effect.
+const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+const morning = new Date(`${today}T09:00:00-08:00`)
+const afternoon = new Date(`${today}T16:30:00-08:00`)
+const nextDay = new Date(afternoon.getTime() + 86_400_000)
+
+test('a fresh comment is not sent: the session may still be going', async () => {
   post('one')
-  assert.equal(await notify('tok11111', send), true)
+  await sweep(send, morning)
+  assert.equal(sent.length, 0)
+  assert.equal(unnotified(), 1)
+})
+
+test('30 quiet minutes ends the session and sends one threaded email', async () => {
+  backdate('one', 31)
+  await sweep(send, morning)
   assert.equal(sent.length, 1)
-  assert.match(sent[0].subject, /^1 new comment on Acme\/feature\/x$/)
-  assert.match(sent[0].text, /\/r\/tok11111/)
+  assert.equal(sent[0].subject, 'Feedback: Acme/feature/x')
+  assert.equal(sent[0].thread, '<review-tok11111@review.cascadeonline.dev>')
+  assert.match(sent[0].text, /1 new comment — .*\/r\/tok11111/)
+  assert.match(sent[0].text, /one/)
   assert.equal(unnotified(), 0)
 })
 
-test('a burst inside the window sends one email covering all of it', async () => {
+test('one fresh comment holds the whole batch until the session ends', async () => {
   post('two')
   post('three')
   post('four')
-  for (let i = 0; i < 3; i++) assert.equal(await notify('tok11111', send), false)
-  assert.equal(sent.length, 1, 'still debounced')
+  backdate('two', 45)
+  backdate('three', 40)
+  await sweep(send, morning)
+  assert.equal(sent.length, 1, 'still an active session')
   assert.equal(unnotified(), 3)
 
-  expireWindow()
-  assert.equal(await notify('tok11111', send), true)
+  backdate('four', 31)
+  await sweep(send, morning)
   assert.equal(sent.length, 2)
-  assert.equal(sent[1].subject, '3 new comments on Acme/feature/x')
+  assert.match(sent[1].text, /^3 new comments/)
   for (const body of ['two', 'three', 'four']) assert.match(sent[1].text, new RegExp(body))
   assert.equal(unnotified(), 0)
 })
 
-test('nothing to say means no email', async () => {
-  expireWindow()
-  assert.equal(await notify('tok11111', send), false)
-  assert.equal(sent.length, 2)
+test('a failed send leaves the comments unnotified for the next sweep', async () => {
+  post('five')
+  backdate('five', 31)
+  await sweep(boom, morning)
+  assert.equal(unnotified(), 1)
+  await sweep(send, morning)
+  assert.equal(sent.at(-1)!.text.includes('five'), true)
+  assert.equal(unnotified(), 0)
 })
 
-test('a failed send leaves the comments unnotified for the next run', async () => {
-  post('five')
-  expireWindow()
-  const boom = async () => {
-    throw new Error('sendgrid down')
-  }
-  assert.equal(await notify('tok11111', boom), false)
-  assert.equal(unnotified(), 1)
+test('the afternoon recap goes out once a day and covers everything', async () => {
+  await sweep(send, morning)
+  assert.equal(recapAt(), undefined, 'not before 3pm')
 
-  expireWindow()
-  assert.equal(await notify('tok11111', send), true)
-  assert.equal(sent.at(-1)!.subject, '1 new comment on Acme/feature/x')
-  assert.equal(unnotified(), 0)
+  await sweep(send, afternoon)
+  const recap = sent.at(-1)!
+  assert.match(recap.subject, /^Feedback recap — \w{3} \w{3} \d+$/)
+  assert.equal(recap.thread, '<review-recap@review.cascadeonline.dev>')
+  assert.match(recap.text, /== Acme\/feature\/x — .*\/r\/tok11111/)
+  for (const body of ['one', 'two', 'three', 'four', 'five']) assert.match(recap.text, new RegExp(body))
+  const count = sent.length
+
+  await sweep(send, afternoon)
+  assert.equal(sent.length, count, 'same day: no second recap')
+})
+
+test('the next recap only covers comments since the last one, and stays silent when empty', async () => {
+  const first = recapAt()!
+  // Pin the earlier comments before the first recap; their real created_at depends on when the suite runs.
+  db.prepare("UPDATE comments SET created_at = datetime(?, '-1 minute')").run(afternoon.toISOString())
+  post('six')
+  db.prepare("UPDATE comments SET created_at = datetime(?, '+1 minute') WHERE body = 'six'").run(afternoon.toISOString())
+  await sweep(send, nextDay)
+  const recap = sent.at(-1)!
+  assert.match(recap.subject, /^Feedback recap/)
+  assert.match(recap.text, /six/)
+  assert.doesNotMatch(recap.text, /five/)
+
+  const count = sent.length
+  const dayAfter = new Date(nextDay.getTime() + 86_400_000)
+  await sweep(send, dayAfter)
+  assert.equal(sent.length, count, 'nothing new: no email')
+  assert.notEqual(recapAt(), first)
+  assert.notEqual(recapAt(), undefined)
 })
