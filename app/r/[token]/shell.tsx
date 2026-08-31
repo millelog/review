@@ -704,12 +704,16 @@ function useDraftGuard(ref: RefObject<number>, text: string) {
   }, [ref, dirty])
 }
 
-/** Grows with the text up to a few lines, then scrolls. */
-function autoGrow(e: FormEvent<HTMLTextAreaElement>) {
-  const el = e.currentTarget
+/** Grows with the text up to a few lines, then scrolls. Also usable as a ref, to size existing text on mount. */
+function grow(el: HTMLTextAreaElement | null) {
+  if (!el) return
   el.style.height = 'auto'
   const borders = el.offsetHeight - el.clientHeight // border-box height needs them back
   el.style.height = `${Math.min(el.scrollHeight + borders, 160)}px`
+}
+
+function autoGrow(e: FormEvent<HTMLTextAreaElement>) {
+  grow(e.currentTarget)
 }
 
 /** Popover sits right of the anchor, flipping left when it would overflow the preview. */
@@ -917,6 +921,7 @@ function Entry({
         >
           <textarea
             autoFocus
+            ref={grow}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onInput={autoGrow}
