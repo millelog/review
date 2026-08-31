@@ -13,7 +13,7 @@ const TYPE: Record<string, { label: string; fg: string; bg: string }> = {
   copy: { label: 'Content', fg: '#1e40af', bg: '#dbeafe' },
 }
 const LA = 'America/Los_Angeles'
-const QUIET_MINUTES = 30
+const QUIET_MINUTES = 120
 const RECAP_HOUR = 15
 
 const appUrl = () => process.env.APP_URL ?? 'https://review.cascadeonline.dev'

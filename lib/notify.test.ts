@@ -43,8 +43,8 @@ test('a fresh comment is not sent: the session may still be going', async () => 
   assert.equal(unnotified(), 1)
 })
 
-test('30 quiet minutes ends the session and sends one threaded email', async () => {
-  backdate('one', 31)
+test('2 quiet hours ends the session and sends one threaded email', async () => {
+  backdate('one', 121)
   await sweep(send, morning)
   assert.equal(sent.length, 1)
   assert.equal(sent[0].subject, 'Feedback: Acme/feature/x')
@@ -60,13 +60,13 @@ test('one fresh comment holds the whole batch until the session ends', async () 
   post('two')
   post('three')
   post('four')
-  backdate('two', 45)
-  backdate('three', 40)
+  backdate('two', 180)
+  backdate('three', 150)
   await sweep(send, morning)
   assert.equal(sent.length, 1, 'still an active session')
   assert.equal(unnotified(), 3)
 
-  backdate('four', 31)
+  backdate('four', 121)
   await sweep(send, morning)
   assert.equal(sent.length, 2)
   assert.match(sent[1].text, /^Acme\/feature\/x — 3 new comments/)
@@ -76,7 +76,7 @@ test('one fresh comment holds the whole batch until the session ends', async () 
 
 test('a failed send leaves the comments unnotified for the next sweep', async () => {
   post('five')
-  backdate('five', 31)
+  backdate('five', 121)
   await sweep(boom, morning)
   assert.equal(unnotified(), 1)
   await sweep(send, morning)
@@ -123,7 +123,7 @@ test('the next recap only covers comments since the last one, and stays silent w
 
 test('comment bodies are escaped into the HTML part', async () => {
   createComment({ token: 'tok11111', path: '/<img>', author: 'Mal <x>', body: '<script>alert(1)</script> & "quotes"' })
-  backdate('<script>alert(1)</script> & "quotes"', 31)
+  backdate('<script>alert(1)</script> & "quotes"', 121)
   await sweep(send, morning)
   const mail = sent.at(-1)!
   assert.doesNotMatch(mail.html, /<script>/)

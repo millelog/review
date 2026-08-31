@@ -32,7 +32,7 @@ and load `https://review.cascadeonline.dev/embed.js` in their root layout.
 ### Notifications
 
 A minutely sweep (started from `instrumentation.ts`) emails `NOTIFY_EMAIL` once a review
-link has gone 30 minutes without a new comment, covering everything since the last email;
+link has gone 2 hours without a new comment, covering everything since the last email;
 the subject and `References` header are stable per project/branch so each link is one
 thread. A daily recap of every comment since the previous recap goes out at 3pm Pacific.
 
