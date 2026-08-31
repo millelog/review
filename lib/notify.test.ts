@@ -17,8 +17,9 @@ const projectId = Number(
 )
 db.prepare('INSERT INTO tokens (token, project_id, branch) VALUES (?, ?, ?)').run('tok11111', projectId, 'feature/x')
 
-const sent: { subject: string; text: string; thread: string }[] = []
-const send = async (subject: string, text: string, thread: string) => void sent.push({ subject, text, thread })
+type Mail = { subject: string; text: string; html: string; thread: string }
+const sent: Mail[] = []
+const send = async (mail: Mail) => void sent.push(mail)
 const boom = async () => {
   throw new Error('sendgrid down')
 }
@@ -48,8 +49,10 @@ test('30 quiet minutes ends the session and sends one threaded email', async () 
   assert.equal(sent.length, 1)
   assert.equal(sent[0].subject, 'Feedback: Acme/feature/x')
   assert.equal(sent[0].thread, '<review-tok11111@review.cascadeonline.dev>')
-  assert.match(sent[0].text, /1 new comment — .*\/r\/tok11111/)
+  assert.match(sent[0].text, /1 new comment/)
   assert.match(sent[0].text, /one/)
+  // The URL is an anchor href in the HTML part, not bare text in the copy.
+  assert.match(sent[0].html, /<a href="https:\/\/review\.cascadeonline\.dev\/r\/tok11111"[^>]*>Open review<\/a>/)
   assert.equal(unnotified(), 0)
 })
 
@@ -66,7 +69,7 @@ test('one fresh comment holds the whole batch until the session ends', async () 
   backdate('four', 31)
   await sweep(send, morning)
   assert.equal(sent.length, 2)
-  assert.match(sent[1].text, /^3 new comments/)
+  assert.match(sent[1].text, /^Acme\/feature\/x — 3 new comments/)
   for (const body of ['two', 'three', 'four']) assert.match(sent[1].text, new RegExp(body))
   assert.equal(unnotified(), 0)
 })
@@ -89,7 +92,8 @@ test('the afternoon recap goes out once a day and covers everything', async () =
   const recap = sent.at(-1)!
   assert.match(recap.subject, /^Feedback recap — \w{3} \w{3} \d+$/)
   assert.equal(recap.thread, '<review-recap@review.cascadeonline.dev>')
-  assert.match(recap.text, /== Acme\/feature\/x — .*\/r\/tok11111/)
+  assert.match(recap.text, /Acme\/feature\/x/)
+  assert.match(recap.html, /<a href="https:\/\/review\.cascadeonline\.dev\/r\/tok11111"/)
   for (const body of ['one', 'two', 'three', 'four', 'five']) assert.match(recap.text, new RegExp(body))
   const count = sent.length
 
@@ -115,4 +119,15 @@ test('the next recap only covers comments since the last one, and stays silent w
   assert.equal(sent.length, count, 'nothing new: no email')
   assert.notEqual(recapAt(), first)
   assert.notEqual(recapAt(), undefined)
+})
+
+test('comment bodies are escaped into the HTML part', async () => {
+  createComment({ token: 'tok11111', path: '/<img>', author: 'Mal <x>', body: '<script>alert(1)</script> & "quotes"' })
+  backdate('<script>alert(1)</script> & "quotes"', 31)
+  await sweep(send, morning)
+  const mail = sent.at(-1)!
+  assert.doesNotMatch(mail.html, /<script>/)
+  assert.match(mail.html, /&lt;script&gt;alert\(1\)&lt;\/script&gt; &amp; &quot;quotes&quot;/)
+  assert.match(mail.html, /Mal &lt;x&gt;/)
+  assert.match(mail.html, /\/&lt;img&gt;/)
 })
