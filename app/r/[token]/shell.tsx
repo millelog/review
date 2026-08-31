@@ -10,7 +10,8 @@ import {
   type FormEvent,
   type RefObject,
 } from 'react'
-import { COMMENT_TYPES, type Comment, type CommentType } from '@/lib/db'
+import type { Comment } from '@/lib/db'
+import { COMMENT_TYPES, type CommentType } from '@/lib/types'
 import type { Thread } from '@/lib/comments'
 import { AVATAR_COLORS, avatarColor, LOGO } from '@/lib/brand'
 import { previewSize } from '@/lib/preview'

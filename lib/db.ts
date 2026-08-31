@@ -20,8 +20,8 @@ export type Token = {
   last_notified_at: string | null
 }
 
-export type CommentType = 'comment' | 'change_request' | 'copy'
-export const COMMENT_TYPES: CommentType[] = ['comment', 'change_request', 'copy']
+import type { CommentType } from './types.ts'
+export type { CommentType }
 export type CommentStatus = 'open' | 'resolved'
 
 export type Comment = {

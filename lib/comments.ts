@@ -1,4 +1,5 @@
-import { COMMENT_TYPES, getDb, getTokenContext } from './db.ts'
+import { getDb, getTokenContext } from './db.ts'
+import { COMMENT_TYPES } from './types.ts'
 import type { Comment, CommentType } from './db.ts'
 import { AVATAR_COLORS } from './brand.ts'
 
