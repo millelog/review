@@ -6,7 +6,7 @@ export type Send = (subject: string, text: string) => Promise<void>
 type Pending = { branch: string; name: string }
 type Row = { id: number; author: string; path: string; body: string; type: string }
 
-const TYPE_LABEL: Record<string, string> = { comment: 'comment', change_request: 'change request', copy: 'text' }
+const TYPE_LABEL: Record<string, string> = { comment: 'comment', change_request: 'change request', copy: 'content' }
 
 const appUrl = () => process.env.APP_URL ?? 'https://review.cascadeonline.dev'
 

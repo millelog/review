@@ -16,7 +16,7 @@ import type { Thread } from '@/lib/comments'
 import { AVATAR_COLORS, avatarColor, LOGO } from '@/lib/brand'
 import { previewSize } from '@/lib/preview'
 
-const TYPE_LABEL: Record<CommentType, string> = { comment: 'Comment', change_request: 'Change request', copy: 'Text' }
+const TYPE_LABEL: Record<CommentType, string> = { comment: 'Comment', change_request: 'Change request', copy: 'Content' }
 const TYPE_COLOR: Record<CommentType, string> = { comment: '', change_request: '#c2410c', copy: '#6d28d9' }
 
 const NAME_KEY = 'review:name'
@@ -644,7 +644,7 @@ function Compose({
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onInput={autoGrow}
-        placeholder={type === 'copy' ? 'Paste the final text that should go here' : 'What needs to change here?'}
+        placeholder={type === 'copy' ? 'Paste the final content that should go here' : 'What needs to change here?'}
         style={S.textarea}
       />
       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
