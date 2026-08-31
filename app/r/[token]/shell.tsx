@@ -67,12 +67,14 @@ export default function Shell({
   const [showResolved, setShowResolved] = useState(false)
   const [splashLeaving, setSplashLeaving] = useState(false)
   const [dockAnim, setDockAnim] = useState<'min' | 'max' | null>(null)
+  const [stalled, setStalled] = useState(false)
   const frameRef = useRef<HTMLIFrameElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
   const dockRef = useRef<HTMLDivElement>(null)
   const splashRef = useRef<HTMLFormElement>(null)
   const threadsRef = useRef<Thread[]>([])
   const focusRef = useRef<string | null>(null)
+  const embedSeenRef = useRef(false)
 
   const previewOrigin = useMemo(() => new URL(src).origin, [src])
 
@@ -128,6 +130,8 @@ export default function Shell({
       if (e.source !== frameRef.current?.contentWindow || e.origin !== previewOrigin) return
       const msg = e.data
       if (!msg || msg.source !== 'review-embed') return
+      embedSeenRef.current = true
+      setStalled(false)
       if (msg.type === 'path') {
         setPath(msg.path)
         setPending(null)
@@ -160,6 +164,12 @@ export default function Shell({
   useEffect(() => {
     toFrame({ type: 'comment-mode', on: commentMode })
   }, [commentMode, toFrame])
+
+  // ponytail: cross-origin, so a failed frame is invisible — infer it from embed.js never checking in.
+  useEffect(() => {
+    const timer = setTimeout(() => setStalled(!embedSeenRef.current), 8000)
+    return () => clearTimeout(timer)
+  }, [])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -262,36 +272,41 @@ export default function Shell({
     window.addEventListener('pointerup', up)
   }
 
-  async function save(body: string, type: CommentType) {
-    if (!pending || !name) return
-    await fetch('/api/comments', {
+  /** POSTs a comment; on failure tells the reviewer instead of silently dropping it. */
+  async function post(payload: Record<string, unknown>): Promise<boolean> {
+    const res = await fetch('/api/comments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token,
-        path: pending.path,
-        author: name,
-        color,
-        body,
-        type,
-        selector: pending.selector,
-        offset_x: pending.offsetX,
-        offset_y: pending.offsetY,
-        viewport_width: pending.viewportWidth,
-      }),
+      body: JSON.stringify(payload),
+    }).catch(() => null)
+    if (res?.ok) return true
+    alert((await res?.json().catch(() => null))?.error ?? 'Could not post your comment — please try again')
+    return false
+  }
+
+  async function save(body: string, type: CommentType): Promise<boolean> {
+    if (!pending || !name) return false
+    const ok = await post({
+      token,
+      path: pending.path,
+      author: name,
+      color,
+      body,
+      type,
+      selector: pending.selector,
+      offset_x: pending.offsetX,
+      offset_y: pending.offsetY,
+      viewport_width: pending.viewportWidth,
     })
+    if (!ok) return false
     setPending(null)
     await load()
+    return true
   }
 
   async function reply(parentId: number, body: string) {
     if (!name) return
-    await fetch('/api/comments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, path, author: name, color, body, parent_id: parentId }),
-    })
-    await load()
+    if (await post({ token, path, author: name, color, body, parent_id: parentId })) await load()
   }
 
   async function toggleResolved(id: number) {
@@ -407,6 +422,13 @@ export default function Shell({
           onClose={() => setPanelOpen(false)}
         />
       </div>
+
+      {stalled && (
+        <div className="hint-drop" style={S.hint}>
+          <span style={{ ...S.hintDot, background: '#f59e0b' }} />
+          The preview isn't responding, so comments won't work here — try refreshing, or let us know
+        </div>
+      )}
 
       {commentMode && (
         <div className="hint-drop" style={S.hint}>
@@ -573,7 +595,7 @@ function Compose({
   onCancel,
 }: {
   pending: Pending
-  onSave: (body: string, type: CommentType) => void
+  onSave: (body: string, type: CommentType) => Promise<boolean>
   onCancel: () => void
 }) {
   const [body, setBody] = useState('')
@@ -597,7 +619,7 @@ function Compose({
         const trimmed = body.trim()
         if (!trimmed || saving) return
         setSaving(true)
-        onSave(trimmed, type)
+        onSave(trimmed, type).then((ok) => ok || setSaving(false))
       }}
     >
       <div style={{ display: 'flex', gap: 6 }}>
