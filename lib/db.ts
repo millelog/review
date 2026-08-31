@@ -39,6 +39,8 @@ export type Comment = {
   offset_x: number
   offset_y: number
   viewport_width: number
+  element_text: string
+  internal: number
   created_at: string
   notified_at: string | null
 }
@@ -77,6 +79,8 @@ CREATE TABLE IF NOT EXISTS comments (
   offset_x REAL NOT NULL DEFAULT 0,
   offset_y REAL NOT NULL DEFAULT 0,
   viewport_width INTEGER NOT NULL DEFAULT 0,
+  element_text TEXT NOT NULL DEFAULT '',
+  internal INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   notified_at TEXT
 );
@@ -99,16 +103,22 @@ export function getDb(): Database.Database {
   db.pragma('foreign_keys = ON')
   db.exec(SCHEMA)
   // ponytail: sqlite has no ADD COLUMN IF NOT EXISTS; the throw on an existing column is the check.
-  try {
-    db.exec("ALTER TABLE comments ADD COLUMN color TEXT NOT NULL DEFAULT ''")
-  } catch {}
+  for (const col of [
+    "color TEXT NOT NULL DEFAULT ''",
+    "element_text TEXT NOT NULL DEFAULT ''",
+    'internal INTEGER NOT NULL DEFAULT 0',
+  ]) {
+    try {
+      db.exec(`ALTER TABLE comments ADD COLUMN ${col}`)
+    } catch {}
+  }
   dropTypeCheck(db)
   instance = db
   return db
 }
 
 const COLS =
-  'id, token, project_id, branch, path, parent_id, author, color, body, type, status, selector, offset_x, offset_y, viewport_width, created_at, notified_at'
+  'id, token, project_id, branch, path, parent_id, author, color, body, type, status, selector, offset_x, offset_y, viewport_width, element_text, internal, created_at, notified_at'
 
 // ponytail: type is validated in createComment, not by CHECK, so adding a type never needs another rebuild.
 function dropTypeCheck(db: Database.Database) {

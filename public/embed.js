@@ -31,6 +31,13 @@
     return null
   }
 
+  // Greppable handle for the element: rendered text, else alt/aria-label.
+  function textOf(el) {
+    var t = el.innerText || el.textContent || el.getAttribute('alt') || el.getAttribute('aria-label') || ''
+    t = String(t).trim().replace(/\s+/g, ' ')
+    return t.length > 120 ? t.slice(0, 120) : t
+  }
+
   function childIndex(parent, node) {
     var kids = parent.children
     for (var i = 0; i < kids.length; i++) if (kids[i] === node) return i + 1
@@ -72,7 +79,7 @@
   }
 
   if (typeof module === 'object' && module.exports) {
-    module.exports = { selectorFor: selectorFor }
+    module.exports = { selectorFor: selectorFor, textOf: textOf }
     return
   }
   if (window.self === window.top) return
@@ -145,6 +152,7 @@
       post({
         type: 'click',
         selector: selectorFor(el),
+        text: textOf(el),
         offsetX: Math.round(e.clientX - rect.left),
         offsetY: Math.round(e.clientY - rect.top),
         viewportWidth: window.innerWidth,

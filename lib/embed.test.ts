@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 
-const { selectorFor } = createRequire(import.meta.url)('../public/embed.js')
+const { selectorFor, textOf } = createRequire(import.meta.url)('../public/embed.js')
 
 type Attr = { name: string; value: string }
 type El = {
@@ -67,4 +67,25 @@ test('escapes quotes in data attribute values', () => {
 
 test('returns null for a non-element', () => {
   assert.equal(selectorFor(null, uniq()), null)
+})
+
+// textOf: the greppable handle an agent uses to find the element in source.
+const node = (props: Record<string, string>) => ({
+  innerText: props.innerText ?? '',
+  textContent: props.textContent ?? '',
+  getAttribute: (name: string) => props[name] ?? null,
+})
+
+test('collapses whitespace in the element text', () => {
+  assert.equal(textOf(node({ innerText: '  Built for teams\n  that ship  ' })), 'Built for teams that ship')
+})
+
+test('falls back to alt then aria-label', () => {
+  assert.equal(textOf(node({ alt: 'Team photo' })), 'Team photo')
+  assert.equal(textOf(node({ 'aria-label': 'Close' })), 'Close')
+  assert.equal(textOf(node({})), '')
+})
+
+test('truncates long text', () => {
+  assert.equal(textOf(node({ innerText: 'x'.repeat(300) })).length, 120)
 })

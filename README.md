@@ -28,6 +28,21 @@ and load `https://review.cascadeonline.dev/embed.js` in their root layout.
 | `NOTIFY_FROM` | `NOTIFY_EMAIL` | verified SendGrid sender |
 | `APP_URL` | `https://review.cascadeonline.dev` | base for links in emails and `/admin` |
 | `PREVIEW_OVERRIDE` | — | dev only: point the iframe at a local fake site |
+| `AGENT_API_KEY` | — | bearer key for `/api/agent`; unset disables the route entirely |
+
+### Agent access
+
+Coding agents pull feedback for a project+branch from `/api/agent` with
+`Authorization: Bearer $AGENT_API_KEY`, and post **internal** notes back onto a thread saying
+what they changed. Internal notes never reach the client link or the notification emails —
+they show only under `/admin/r/{token}`, the staff copy of the review page (same UI, guarded
+by the Cloudflare Access app on `/admin/*`). The agent side lives in the global
+`review-feedback` Claude skill.
+
+```bash
+curl -sH "Authorization: Bearer $AGENT_API_KEY" \
+  'https://review.cascadeonline.dev/api/agent?project=morrow&branch=main'
+```
 
 ### Notifications
 

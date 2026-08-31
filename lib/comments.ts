@@ -22,6 +22,7 @@ export type NewComment = {
   type?: CommentType
   parent_id?: number | null
   selector?: string
+  element_text?: string
   offset_x?: number
   offset_y?: number
   viewport_width?: number
@@ -33,7 +34,8 @@ function str(value: unknown, field: string): string {
   return s
 }
 
-export function createComment(input: NewComment): Comment {
+// `internal` is an argument, not a body field: the public POST route hands us unfiltered JSON.
+export function createComment(input: NewComment, opts: { internal?: boolean } = {}): Comment {
   const ctx = getTokenContext(input.token)
   if (!ctx) throw new ApiError('invalid or revoked token', 404)
 
@@ -52,8 +54,9 @@ export function createComment(input: NewComment): Comment {
   return getDb()
     .prepare(
       `INSERT INTO comments
-         (token, project_id, branch, path, parent_id, author, color, body, type, selector, offset_x, offset_y, viewport_width)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (token, project_id, branch, path, parent_id, author, color, body, type, selector, element_text,
+          offset_x, offset_y, viewport_width, internal, notified_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING *`,
     )
     .get(
@@ -67,22 +70,30 @@ export function createComment(input: NewComment): Comment {
       body,
       type,
       input.selector ?? '',
+      input.element_text ?? '',
       input.offset_x ?? 0,
       input.offset_y ?? 0,
       input.viewport_width ?? 0,
+      opts.internal ? 1 : 0,
+      // pre-marked as notified so agent notes never reach the client-link digest
+      opts.internal ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null,
     ) as Comment
 }
 
 /** Threaded comments for the token's project+branch — independent of which token created them. */
-export function listThreads(token: string): Thread[] {
+export function listThreads(token: string, includeInternal = false): Thread[] {
   const ctx = getTokenContext(token)
   if (!ctx) throw new ApiError('invalid or revoked token', 404)
+  return threadsFor(ctx.project_id, ctx.branch, includeInternal)
+}
 
+/** Shared thread assembly; agent reads come in by project+branch, with no token at all. */
+export function threadsFor(projectId: number, branch: string, includeInternal = false): Thread[] {
   const rows = getDb()
     .prepare(
-      'SELECT * FROM comments WHERE project_id = ? AND branch = ? ORDER BY id',
+      `SELECT * FROM comments WHERE project_id = ? AND branch = ?${includeInternal ? '' : ' AND internal = 0'} ORDER BY id`,
     )
-    .all(ctx.project_id, ctx.branch) as Comment[]
+    .all(projectId, branch) as Comment[]
 
   const roots = new Map<number, Thread>()
   for (const row of rows) if (row.parent_id === null) roots.set(row.id, { ...row, replies: [] })

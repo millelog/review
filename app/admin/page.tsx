@@ -43,6 +43,9 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
                   <span style={S.muted}>revoked</span>
                 ) : (
                   <>
+                    <a href={`/admin/r/${t.token}`} style={{ ...S.button, textDecoration: 'none', lineHeight: '20px' }}>
+                      Staff view
+                    </a>
                     <CopyLink url={`${base}/r/${t.token}`} />
                     <form action={revoke}>
                       <input type="hidden" name="token" value={t.token} />

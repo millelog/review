@@ -34,6 +34,7 @@ type Pending = {
   y: number
   path: string
   selector: string
+  text: string
   offsetX: number
   offsetY: number
   viewportWidth: number
@@ -44,11 +45,13 @@ export default function Shell({
   project,
   branch,
   src,
+  staff = false,
 }: {
   token: string
   project: string
   branch: string
   src: string
+  staff?: boolean
 }) {
   const [name, setName] = useState<string | null>(null)
   const [color, setColor] = useState('')
@@ -96,9 +99,10 @@ export default function Shell({
   }, [])
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/comments?token=${encodeURIComponent(token)}`)
+    // the staff feed is the same list plus internal agent notes; Access guards the /admin prefix
+    const res = await fetch(`${staff ? '/admin/api' : '/api'}/comments?token=${encodeURIComponent(token)}`)
     if (res.ok) setThreads((await res.json()).comments)
-  }, [token])
+  }, [token, staff])
 
   useEffect(() => {
     void load()
@@ -148,6 +152,7 @@ export default function Shell({
           y: msg.y,
           path: msg.path,
           selector: msg.selector ?? '',
+          text: msg.text ?? '',
           offsetX: msg.offsetX,
           offsetY: msg.offsetY,
           viewportWidth: msg.viewportWidth,
@@ -298,6 +303,7 @@ export default function Shell({
       body,
       type,
       selector: pending.selector,
+      element_text: pending.text,
       offset_x: pending.offsetX,
       offset_y: pending.offsetY,
       viewport_width: pending.viewportWidth,
@@ -788,8 +794,17 @@ function Entry({
   onDelete?: () => void
 }) {
   const size = sizeLabel(comment.viewport_width)
+  // internal rows only ever reach the staff feed; the client link filters them out server-side
+  const internal = !!comment.internal
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 3,
+        ...(internal ? { borderLeft: '2px solid #0369a1', paddingLeft: 8 } : null),
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={S.avatar(avatarColor(comment.author, comment.color))}>
           {comment.author[0].toUpperCase()}
@@ -808,7 +823,10 @@ function Entry({
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        {comment.type !== 'comment' && <span style={S.badge(TYPE_COLOR[comment.type])}>{TYPE_LABEL[comment.type]}</span>}
+        {internal && <span style={S.badge('#0369a1')}>Agent note - staff only</span>}
+        {comment.type !== 'comment' && !internal && (
+          <span style={S.badge(TYPE_COLOR[comment.type])}>{TYPE_LABEL[comment.type]}</span>
+        )}
         <span style={{ ...S.muted, fontSize: 11 }}>
           {stamp(comment.created_at)}
           {size && ` · ${size}`}
