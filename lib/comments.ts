@@ -120,6 +120,20 @@ export function deleteOwnComment(token: string, id: number, author: string): voi
   removeComment(id)
 }
 
+/** Same ownership rule as delete: an in-place body rewrite, stamped so the UI can show "edited". */
+export function editOwnComment(token: string, id: number, author: string, body: string): Comment {
+  const ctx = getTokenContext(token)
+  if (!ctx) throw new ApiError('invalid or revoked token', 404)
+  const row = getDb()
+    .prepare('SELECT author FROM comments WHERE id = ? AND project_id = ? AND branch = ?')
+    .get(id, ctx.project_id, ctx.branch) as Pick<Comment, 'author'> | undefined
+  if (!row) throw new ApiError('comment not found', 404)
+  if (row.author !== str(author, 'author')) throw new ApiError('you can only edit your own comments', 403)
+  return getDb()
+    .prepare("UPDATE comments SET body = ?, updated_at = datetime('now') WHERE id = ? RETURNING *")
+    .get(str(body, 'body'), id) as Comment
+}
+
 /** Flips a comment between open and resolved. */
 export function toggleStatus(id: number): Comment {
   const row = getDb()

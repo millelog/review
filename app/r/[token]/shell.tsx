@@ -82,6 +82,7 @@ export default function Shell({
   const threadsRef = useRef<Thread[]>([])
   const focusRef = useRef<string | null>(null)
   const embedSeenRef = useRef(false)
+  const draftRef = useRef(0)
 
   const previewOrigin = useMemo(() => new URL(src).origin, [src])
 
@@ -142,7 +143,7 @@ export default function Shell({
       setStalled(false)
       if (msg.type === 'path') {
         setPath(msg.path)
-        setPending(null)
+        if (!draftRef.current) setPending(null)
         setOpenId((id) =>
           id !== null && threadsRef.current.find((t) => t.id === id)?.path === msg.path ? id : null,
         )
@@ -182,7 +183,7 @@ export default function Shell({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return
+      if (e.key !== 'Escape' || draftRef.current) return
       setPending(null)
       setOpenId(null)
       setCommentMode(false)
@@ -336,6 +337,17 @@ export default function Shell({
     await load()
   }
 
+  async function edit(id: number, body: string) {
+    if (!name) return
+    const res = await fetch(`/api/comments/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, author: name, body }),
+    }).catch(() => null)
+    if (!res?.ok) return alert((await res?.json().catch(() => null))?.error ?? 'Could not save that edit')
+    await load()
+  }
+
   /** Sidebar click: restore the page, preview size and scroll position the comment was left at. */
   function focusThread(t: Thread) {
     if (t.status === 'resolved') setShowResolved(true)
@@ -397,7 +409,9 @@ export default function Shell({
               at={positions[openThread.id]}
               width={frameRef.current?.clientWidth || 0}
               me={name}
+              draftRef={draftRef}
               onReply={reply}
+              onEdit={edit}
               onToggleResolved={toggleResolved}
               onDelete={remove}
               onClose={() => setOpenId(null)}
@@ -405,7 +419,12 @@ export default function Shell({
           )}
 
           {pending && (
-            <div style={S.catcher} onClick={() => setPending(null)}>
+            <div
+              style={S.catcher}
+              onClick={() => {
+                if (!draftRef.current) setPending(null)
+              }}
+            >
               <div
                 className="pin-plant"
                 style={{
@@ -415,7 +434,12 @@ export default function Shell({
                   background: avatarColor(name || 'G', color),
                 }}
               />
-              <Compose pending={pending} onSave={save} onCancel={() => setPending(null)} />
+              <Compose
+                pending={pending}
+                draftRef={draftRef}
+                onSave={save}
+                onCancel={() => setPending(null)}
+              />
             </div>
           )}
         </div>
@@ -601,16 +625,19 @@ export default function Shell({
 
 function Compose({
   pending,
+  draftRef,
   onSave,
   onCancel,
 }: {
   pending: Pending
+  draftRef: RefObject<number>
   onSave: (body: string, type: CommentType) => Promise<boolean>
   onCancel: () => void
 }) {
   const [body, setBody] = useState('')
   const [type, setType] = useState<CommentType>('comment')
   const [saving, setSaving] = useState(false)
+  useDraftGuard(draftRef, body)
 
   const left = popoverLeft(pending.x, pending.viewportWidth)
 
@@ -650,7 +677,7 @@ function Compose({
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onInput={autoGrow}
-        placeholder={type === 'copy' ? 'Paste the final content that should go here' : 'What needs to change here?'}
+        placeholder={type === 'copy' ? 'Write the final content that should go here' : 'What needs to change here?'}
         style={S.textarea}
       />
       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -663,6 +690,18 @@ function Compose({
       </div>
     </form>
   )
+}
+
+/** Counts open textareas holding unsaved text, so a stray click or Escape can't discard a draft. */
+function useDraftGuard(ref: RefObject<number>, text: string) {
+  const dirty = text.trim() !== ''
+  useEffect(() => {
+    if (!dirty) return
+    ref.current += 1
+    return () => {
+      ref.current -= 1
+    }
+  }, [ref, dirty])
 }
 
 /** Grows with the text up to a few lines, then scrolls. */
@@ -699,7 +738,9 @@ function ThreadPanel({
   at,
   width,
   me,
+  draftRef,
   onReply,
+  onEdit,
   onToggleResolved,
   onDelete,
   onClose,
@@ -708,7 +749,9 @@ function ThreadPanel({
   at: { x: number; y: number }
   width: number
   me: string | null
+  draftRef: RefObject<number>
   onReply: (parentId: number, body: string) => Promise<void>
+  onEdit: (id: number, body: string) => Promise<void>
   onToggleResolved: (id: number) => void
   onDelete: (id: number, isRoot: boolean) => void
   onClose: () => void
@@ -716,6 +759,7 @@ function ThreadPanel({
   const [body, setBody] = useState('')
   const [saving, setSaving] = useState(false)
   const replyRef = useRef<HTMLTextAreaElement>(null)
+  useDraftGuard(draftRef, body)
 
   const left = popoverLeft(at.x, width)
 
@@ -734,14 +778,18 @@ function ThreadPanel({
       <div style={S.threadScroll}>
         <Entry
           comment={thread}
+          draftRef={draftRef}
           onClose={onClose}
           onDelete={thread.author === me ? () => onDelete(thread.id, true) : undefined}
+          onEdit={thread.author === me ? (text) => onEdit(thread.id, text) : undefined}
         />
         {thread.replies.map((r) => (
           <Entry
             key={r.id}
             comment={r}
+            draftRef={draftRef}
             onDelete={r.author === me ? () => onDelete(r.id, false) : undefined}
+            onEdit={r.author === me ? (text) => onEdit(r.id, text) : undefined}
           />
         ))}
       </div>
@@ -786,13 +834,21 @@ function ThreadPanel({
 
 function Entry({
   comment,
+  draftRef,
   onClose,
   onDelete,
+  onEdit,
 }: {
   comment: Comment
+  draftRef: RefObject<number>
   onClose?: () => void
   onDelete?: () => void
+  onEdit?: (body: string) => Promise<void>
 }) {
+  // null means "not editing"; anything else is the working copy of the body
+  const [draft, setDraft] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  useDraftGuard(draftRef, draft ?? '')
   const size = sizeLabel(comment.viewport_width)
   // internal rows only ever reach the staff feed; the client link filters them out server-side
   const internal = !!comment.internal
@@ -811,6 +867,17 @@ function Entry({
         </span>
         <strong style={{ fontSize: 12.5, ...S.ellipsis }}>{comment.author}</strong>
         <span style={{ flex: 1 }} />
+        {onEdit && draft === null && (
+          <button
+            type="button"
+            className="gray"
+            title="Edit"
+            style={{ ...S.iconBtn, padding: 3 }}
+            onClick={() => setDraft(comment.body)}
+          >
+            <PencilIcon />
+          </button>
+        )}
         {onDelete && (
           <button type="button" className="gray" title="Delete" style={{ ...S.iconBtn, padding: 3 }} onClick={onDelete}>
             <TrashIcon />
@@ -830,9 +897,41 @@ function Entry({
         <span style={{ ...S.muted, fontSize: 11 }}>
           {stamp(comment.created_at)}
           {size && ` · ${size}`}
+          {comment.updated_at && ' · edited'}
         </span>
       </div>
-      <p style={{ ...S.commentBody, margin: '3px 0 0', fontSize: 13.5 }}>{comment.body}</p>
+      {draft === null ? (
+        <p style={{ ...S.commentBody, margin: '3px 0 0', fontSize: 13.5 }}>{comment.body}</p>
+      ) : (
+        <form
+          style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 3 }}
+          onSubmit={async (e) => {
+            e.preventDefault()
+            const trimmed = draft.trim()
+            if (!trimmed || saving) return
+            setSaving(true)
+            await onEdit?.(trimmed)
+            setDraft(null)
+            setSaving(false)
+          }}
+        >
+          <textarea
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onInput={autoGrow}
+            style={{ ...S.textarea, minHeight: 60 }}
+          />
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <button type="button" className="gray" style={S.ghost} onClick={() => setDraft(null)}>
+              Cancel
+            </button>
+            <button type="submit" className="teal" style={S.primary} disabled={saving}>
+              Save
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   )
 }
@@ -1066,6 +1165,14 @@ function TrashIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 16 16" {...stroke}>
       <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.6 9a1 1 0 0 0 1 1h4.8a1 1 0 0 0 1-1L12 4" />
+    </svg>
+  )
+}
+
+function PencilIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" {...stroke}>
+      <path d="M11.6 2.4a1.4 1.4 0 0 1 2 2L6 12l-2.6.6.6-2.6zM10.2 3.8l2 2" />
     </svg>
   )
 }
@@ -1354,7 +1461,7 @@ const S = {
 
   compose: {
     position: 'absolute',
-    zIndex: 22,
+    zIndex: 45,
     width: CARD_W,
     display: 'flex',
     flexDirection: 'column',

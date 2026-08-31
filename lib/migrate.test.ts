@@ -40,4 +40,5 @@ test('rebuild drops the type CHECK and keeps every row', () => {
   assert.deepEqual(db.prepare('SELECT COUNT(*) AS n FROM comments').get(), { n: 3 })
   assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name = 'comments_scope'").get() !== undefined, true)
   assert.equal(db.pragma('foreign_keys', { simple: true }), 1)
+  assert.deepEqual(rows.map((r) => r.updated_at), [null, null]) // added by ALTER, never backfilled
 })

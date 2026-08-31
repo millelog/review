@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'review-')), 'test.db')
 const { getDb } = await import('./db.ts')
-const { createComment, listThreads, toggleStatus, deleteOwnComment, removeComment, ApiError } =
+const { createComment, listThreads, toggleStatus, deleteOwnComment, editOwnComment, removeComment, ApiError } =
   await import('./comments.ts')
 const { AVATAR_COLORS } = await import('./brand.ts')
 
@@ -102,6 +102,27 @@ test('deletes only your own comments, and replies go with their root', () => {
   assert.equal(on('/del'), undefined)
   assert.equal(listThreads('tok11111').filter((t) => t.path === '/del').length, 0)
   assert.throws(() => removeComment(root.id), ApiError)
+})
+
+test('edits only your own comments, and stamps updated_at', () => {
+  const root = createComment({ token: 'tok11111', path: '/edit', author: 'Sam', body: 'typo heer' })
+  const theirs = createComment({ token: 'tok11111', path: '/edit', author: 'Dana', body: 'theirs', parent_id: root.id })
+
+  assert.equal(root.updated_at, null)
+  assert.throws(
+    () => editOwnComment('tok11111', theirs.id, 'Sam', 'nope'),
+    (e) => e instanceof ApiError && e.status === 403,
+  )
+  assert.throws(() => editOwnComment('dead0000', root.id, 'Sam', 'nope'), ApiError)
+  assert.throws(() => editOwnComment('tok11111', 999, 'Sam', 'nope'), ApiError)
+  assert.throws(() => editOwnComment('tok11111', root.id, 'Sam', '   '), /body is required/)
+
+  const edited = editOwnComment('tok11111', root.id, 'Sam', '  typo here  ')
+  assert.equal(edited.body, 'typo here')
+  assert.ok(edited.updated_at)
+  const reread = listThreads('tok11111').find((t) => t.id === root.id)
+  assert.equal(reread?.body, 'typo here')
+  assert.equal(reread?.replies[0].updated_at, null) // untouched rows stay unmarked
 })
 
 test('keeps palette colours, drops anything else', () => {

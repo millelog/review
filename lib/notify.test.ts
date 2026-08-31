@@ -122,6 +122,8 @@ test('the next recap only covers comments since the last one, and stays silent w
 })
 
 test('comment bodies are escaped into the HTML part', async () => {
+  // Earlier tests leave rows dated into the future, which would hold this token's session open.
+  db.prepare("UPDATE comments SET notified_at = datetime('now') WHERE notified_at IS NULL").run()
   createComment({ token: 'tok11111', path: '/<img>', author: 'Mal <x>', body: '<script>alert(1)</script> & "quotes"' })
   backdate('<script>alert(1)</script> & "quotes"', 121)
   await sweep(send, morning)

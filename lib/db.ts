@@ -43,6 +43,7 @@ export type Comment = {
   internal: number
   created_at: string
   notified_at: string | null
+  updated_at: string | null
 }
 
 const SCHEMA = `
@@ -82,7 +83,8 @@ CREATE TABLE IF NOT EXISTS comments (
   element_text TEXT NOT NULL DEFAULT '',
   internal INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  notified_at TEXT
+  notified_at TEXT,
+  updated_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS comments_scope ON comments (project_id, branch);
@@ -107,6 +109,7 @@ export function getDb(): Database.Database {
     "color TEXT NOT NULL DEFAULT ''",
     "element_text TEXT NOT NULL DEFAULT ''",
     'internal INTEGER NOT NULL DEFAULT 0',
+    'updated_at TEXT',
   ]) {
     try {
       db.exec(`ALTER TABLE comments ADD COLUMN ${col}`)
@@ -118,7 +121,7 @@ export function getDb(): Database.Database {
 }
 
 const COLS =
-  'id, token, project_id, branch, path, parent_id, author, color, body, type, status, selector, offset_x, offset_y, viewport_width, element_text, internal, created_at, notified_at'
+  'id, token, project_id, branch, path, parent_id, author, color, body, type, status, selector, offset_x, offset_y, viewport_width, element_text, internal, created_at, notified_at, updated_at'
 
 // ponytail: type is validated in createComment, not by CHECK, so adding a type never needs another rebuild.
 function dropTypeCheck(db: Database.Database) {

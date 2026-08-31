@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server'
-import { ApiError, deleteOwnComment, toggleStatus } from '@/lib/comments'
+import { ApiError, deleteOwnComment, editOwnComment, toggleStatus } from '@/lib/comments'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,10 +8,16 @@ function fail(error: unknown) {
   throw error
 }
 
-export async function PATCH(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+// A body means "edit"; no body still means "toggle resolved", which is how the resolve button calls it.
+export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
+  const payload = await request.json().catch(() => null)
   try {
-    return Response.json({ comment: toggleStatus(Number(id)) })
+    return Response.json({
+      comment: payload?.body
+        ? editOwnComment(payload.token ?? '', Number(id), payload.author ?? '', payload.body)
+        : toggleStatus(Number(id)),
+    })
   } catch (error) {
     return fail(error)
   }
