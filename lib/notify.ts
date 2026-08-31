@@ -6,6 +6,8 @@ export type Send = (subject: string, text: string) => Promise<void>
 type Pending = { branch: string; name: string }
 type Row = { id: number; author: string; path: string; body: string; type: string }
 
+const TYPE_LABEL: Record<string, string> = { comment: 'comment', change_request: 'change request', copy: 'text' }
+
 const appUrl = () => process.env.APP_URL ?? 'https://review.cascadeonline.dev'
 
 // One trailing timer per token, so comments left inside the debounce window still get sent.
@@ -74,7 +76,7 @@ export async function notify(token: string, send: Send = sendGrid): Promise<bool
   const text = [
     `${appUrl()}/r/${token}`,
     '',
-    ...rows.map((r) => `[${r.type === 'change_request' ? 'change request' : 'comment'}] ${r.author} on ${r.path}:\n${r.body}`),
+    ...rows.map((r) => `[${TYPE_LABEL[r.type] ?? 'comment'}] ${r.author} on ${r.path}:\n${r.body}`),
   ].join('\n')
 
   try {

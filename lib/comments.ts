@@ -1,4 +1,4 @@
-import { getDb, getTokenContext } from './db.ts'
+import { COMMENT_TYPES, getDb, getTokenContext } from './db.ts'
 import type { Comment, CommentType } from './db.ts'
 import { AVATAR_COLORS } from './brand.ts'
 
@@ -38,7 +38,7 @@ export function createComment(input: NewComment): Comment {
 
   const author = str(input.author, 'author')
   const body = str(input.body, 'body')
-  const type: CommentType = input.type === 'change_request' ? 'change_request' : 'comment'
+  const type: CommentType = COMMENT_TYPES.includes(input.type as CommentType) ? (input.type as CommentType) : 'comment'
 
   const parentId = input.parent_id ?? null
   if (parentId !== null) {

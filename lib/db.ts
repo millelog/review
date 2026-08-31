@@ -20,7 +20,8 @@ export type Token = {
   last_notified_at: string | null
 }
 
-export type CommentType = 'comment' | 'change_request'
+export type CommentType = 'comment' | 'change_request' | 'copy'
+export const COMMENT_TYPES: CommentType[] = ['comment', 'change_request', 'copy']
 export type CommentStatus = 'open' | 'resolved'
 
 export type Comment = {
@@ -72,7 +73,7 @@ CREATE TABLE IF NOT EXISTS comments (
   author TEXT NOT NULL,
   color TEXT NOT NULL DEFAULT '',
   body TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('comment', 'change_request')),
+  type TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
   selector TEXT NOT NULL DEFAULT '',
   offset_x REAL NOT NULL DEFAULT 0,
@@ -101,8 +102,27 @@ export function getDb(): Database.Database {
   try {
     db.exec("ALTER TABLE comments ADD COLUMN color TEXT NOT NULL DEFAULT ''")
   } catch {}
+  dropTypeCheck(db)
   instance = db
   return db
+}
+
+const COLS =
+  'id, token, project_id, branch, path, parent_id, author, color, body, type, status, selector, offset_x, offset_y, viewport_width, created_at, notified_at'
+
+// ponytail: type is validated in createComment, not by CHECK, so adding a type never needs another rebuild.
+function dropTypeCheck(db: Database.Database) {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'comments'").get() as { sql: string } | undefined
+  if (!row?.sql.includes('type IN (')) return
+  db.pragma('foreign_keys = OFF')
+  db.transaction(() => {
+    db.exec('ALTER TABLE comments RENAME TO comments_old')
+    db.exec(SCHEMA)
+    db.exec(`INSERT INTO comments (${COLS}) SELECT ${COLS} FROM comments_old`)
+    db.exec('DROP TABLE comments_old')
+    db.exec(SCHEMA) // indexes went with the old table
+  })()
+  db.pragma('foreign_keys = ON')
 }
 
 export type TokenContext = Token & Pick<Project, 'name' | 'slug' | 'vercel_project' | 'vercel_team'>

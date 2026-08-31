@@ -110,3 +110,8 @@ test('keeps palette colours, drops anything else', () => {
   assert.equal(createComment({ ...base, color: 'url(evil)' }).color, '')
   assert.equal(createComment(base).color, '')
 })
+
+test('copy type is accepted, unknown types fall back to comment', () => {
+  assert.equal(createComment({ token: 'tok11111', path: '/', author: 'Dana', body: 'Final headline', type: 'copy' }).type, 'copy')
+  assert.equal(createComment({ token: 'tok11111', path: '/', author: 'Dana', body: 'x', type: 'bogus' as never }).type, 'comment')
+})

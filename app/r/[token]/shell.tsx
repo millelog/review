@@ -10,10 +10,13 @@ import {
   type FormEvent,
   type RefObject,
 } from 'react'
-import type { Comment, CommentType } from '@/lib/db'
+import { COMMENT_TYPES, type Comment, type CommentType } from '@/lib/db'
 import type { Thread } from '@/lib/comments'
 import { AVATAR_COLORS, avatarColor, LOGO } from '@/lib/brand'
 import { previewSize } from '@/lib/preview'
+
+const TYPE_LABEL: Record<CommentType, string> = { comment: 'Comment', change_request: 'Change request', copy: 'Text' }
+const TYPE_COLOR: Record<CommentType, string> = { comment: '', change_request: '#c2410c', copy: '#6d28d9' }
 
 const NAME_KEY = 'review:name'
 const COLOR_KEY = 'review:color'
@@ -623,29 +626,24 @@ function Compose({
       }}
     >
       <div style={{ display: 'flex', gap: 6 }}>
-        <button
-          type="button"
-          className={type === 'comment' ? undefined : 'gray'}
-          style={S.chip(type === 'comment')}
-          onClick={() => setType('comment')}
-        >
-          Comment
-        </button>
-        <button
-          type="button"
-          className={type === 'change_request' ? undefined : 'gray'}
-          style={S.chip(type === 'change_request')}
-          onClick={() => setType('change_request')}
-        >
-          Change request
-        </button>
+        {COMMENT_TYPES.map((t) => (
+          <button
+            key={t}
+            type="button"
+            className={type === t ? undefined : 'gray'}
+            style={S.chip(type === t)}
+            onClick={() => setType(t)}
+          >
+            {TYPE_LABEL[t]}
+          </button>
+        ))}
       </div>
       <textarea
         autoFocus
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onInput={autoGrow}
-        placeholder="What needs to change here?"
+        placeholder={type === 'copy' ? 'Paste the final text that should go here' : 'What needs to change here?'}
         style={S.textarea}
       />
       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -809,7 +807,7 @@ function Entry({
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        {comment.type === 'change_request' && <span style={S.chip(true)}>Change request</span>}
+        {comment.type !== 'comment' && <span style={S.badge(TYPE_COLOR[comment.type])}>{TYPE_LABEL[comment.type]}</span>}
         <span style={{ ...S.muted, fontSize: 11 }}>
           {stamp(comment.created_at)}
           {size && ` · ${size}`}
@@ -966,7 +964,7 @@ function Sidebar({
                   </span>
                 </button>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                  {t.type === 'change_request' && <span style={S.badge('#c2410c')}>Change request</span>}
+                  {t.type !== 'comment' && <span style={S.badge(TYPE_COLOR[t.type])}>{TYPE_LABEL[t.type]}</span>}
                   <span style={S.badge(t.status === 'resolved' ? '#15803d' : '#475569')}>
                     {t.status}
                   </span>
