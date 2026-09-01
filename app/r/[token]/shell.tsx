@@ -393,6 +393,9 @@ export default function Shell({
         <div style={{ ...S.frameBox, ...VIEWPORTS[viewport], ...S.frameShadow(viewport) }}>
           <iframe
             ref={frameRef}
+            /* Without this a previewed page can't go fullscreen — requestFullscreen()
+               is refused in an iframe that wasn't granted the feature. */
+            allow="fullscreen"
             id="preview"
             src={src}
             title={`${project} — ${branch}`}
