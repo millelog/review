@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type HTMLAttributes,
   type RefObject,
 } from 'react'
 import type { Comment } from '@/lib/db'
@@ -69,6 +70,7 @@ export default function Shell({
   const [threads, setThreads] = useState<Thread[]>([])
   const [positions, setPositions] = useState<Record<number, { x: number; y: number }>>({})
   const [openId, setOpenId] = useState<number | null>(null)
+  const [hoverId, setHoverId] = useState<number | null>(null)
   const [outdated, setOutdated] = useState<number[]>([])
   const [loadSeq, setLoadSeq] = useState(0)
   const [showResolved, setShowResolved] = useState(false)
@@ -83,6 +85,26 @@ export default function Shell({
   const focusRef = useRef<string | null>(null)
   const embedSeenRef = useRef(false)
   const draftRef = useRef(0)
+  const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  // Hovering peeks at a thread, clicking anchors it. The grace period covers the gap between pin and panel.
+  const peek = (id: number) => {
+    clearTimeout(hoverTimer.current)
+    setHoverId(id)
+  }
+  const unpeek = () => {
+    hoverTimer.current = setTimeout(() => setHoverId(null), 150)
+  }
+  const anchor = (id: number) => {
+    clearTimeout(hoverTimer.current)
+    setHoverId(null)
+    setOpenId(id)
+  }
+  const dismiss = () => {
+    clearTimeout(hoverTimer.current)
+    setHoverId(null)
+    setOpenId(null)
+  }
 
   const previewOrigin = useMemo(() => new URL(src).origin, [src])
 
@@ -117,7 +139,8 @@ export default function Shell({
     () => threads.filter((t) => t.path === path && (showResolved || t.status === 'open')),
     [threads, path, showResolved],
   )
-  const openThread = pins.find((t) => t.id === openId) ?? null
+  // a peek whose pin vanished (deleted, resolved) leaves a stale hoverId, so fall back to the anchored one
+  const openThread = pins.find((t) => t.id === hoverId) ?? pins.find((t) => t.id === openId) ?? null
   const openCount = threads.filter((t) => t.status === 'open').length
 
   const sendTrack = useCallback(() => {
@@ -144,6 +167,7 @@ export default function Shell({
       if (msg.type === 'path') {
         setPath(msg.path)
         if (!draftRef.current) setPending(null)
+        setHoverId(null)
         setOpenId((id) =>
           id !== null && threadsRef.current.find((t) => t.id === id)?.path === msg.path ? id : null,
         )
@@ -185,6 +209,7 @@ export default function Shell({
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'Escape' || draftRef.current) return
       setPending(null)
+      setHoverId(null)
       setOpenId(null)
       setCommentMode(false)
     }
@@ -391,10 +416,16 @@ export default function Shell({
                   data-pin={t.id}
                   className="pin-plant"
                   style={{
-                    ...S.pinButton(positions[t.id], avatarColor(t.author, t.color), openId === t.id),
+                    ...S.pinButton(positions[t.id], avatarColor(t.author, t.color), openThread?.id === t.id),
                     animationDelay: `${pins.indexOf(t) * 30}ms`,
                   }}
-                  onClick={() => setOpenId((id) => (id === t.id ? null : t.id))}
+                  onMouseEnter={() => peek(t.id)}
+                  onMouseLeave={unpeek}
+                  onClick={() => {
+                    clearTimeout(hoverTimer.current)
+                    setHoverId(null)
+                    setOpenId((id) => (id === t.id ? null : t.id))
+                  }}
                 >
                   {pins.indexOf(t) + 1}
                 </button>
@@ -410,11 +441,18 @@ export default function Shell({
               width={frameRef.current?.clientWidth || 0}
               me={name}
               draftRef={draftRef}
+              hover={{
+                onMouseEnter: () => peek(openThread.id),
+                onMouseLeave: unpeek,
+                // any real interaction anchors it, so a mouse-leave can never take a draft with it
+                onMouseDown: () => anchor(openThread.id),
+                onFocus: () => anchor(openThread.id),
+              }}
               onReply={reply}
               onEdit={edit}
               onToggleResolved={toggleResolved}
               onDelete={remove}
-              onClose={() => setOpenId(null)}
+              onClose={dismiss}
             />
           )}
 
@@ -637,18 +675,21 @@ function Compose({
   const [body, setBody] = useState('')
   const [type, setType] = useState<CommentType>('comment')
   const [saving, setSaving] = useState(false)
+  const cardRef = useRef<HTMLFormElement>(null)
   useDraftGuard(draftRef, body)
 
   const left = popoverLeft(pending.x, pending.viewportWidth)
+  const { top, up } = usePopoverTop(cardRef, pending.y)
 
   return (
     <form
+      ref={cardRef}
       className="pop-in"
       style={{
         ...S.compose,
         left,
-        top: pending.y + 12,
-        transformOrigin: left > pending.x ? 'top left' : 'top right',
+        top,
+        transformOrigin: `${up ? 'bottom' : 'top'} ${left > pending.x ? 'left' : 'right'}`,
       }}
       onClick={(e) => e.stopPropagation()}
       onSubmit={(e) => {
@@ -722,6 +763,27 @@ function popoverLeft(x: number, frameWidth: number) {
   return Math.max(8, flip ? x - (CARD_W + 20) : x + 20)
 }
 
+/**
+ * Sits below the pin, flipping above it when it would run past the bottom of the preview.
+ * The height isn't known until it renders, so measure after every render and let the second one place it.
+ */
+function usePopoverTop(ref: RefObject<HTMLElement | null>, y: number) {
+  const [box, setBox] = useState({ h: 0, frame: 0 })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const next = { h: el.offsetHeight, frame: el.parentElement?.clientHeight ?? 0 }
+    setBox((b) => (b.h === next.h && b.frame === next.frame ? b : next))
+  })
+
+  const { h, frame } = box
+  const below = y + 12
+  const above = y - 38 - h // clears the 26px pin, then the same 12px gap used below it
+  let top = h && below + h > frame && above >= 8 ? above : below
+  if (h && frame) top = Math.max(8, Math.min(top, frame - h - 8)) // taller than the frame: pin it to the top
+  return { top, up: top < y }
+}
+
 function stamp(created: string) {
   return new Date(created.replace(' ', 'T') + 'Z').toLocaleString(undefined, {
     month: 'short',
@@ -743,6 +805,7 @@ function ThreadPanel({
   width,
   me,
   draftRef,
+  hover,
   onReply,
   onEdit,
   onToggleResolved,
@@ -754,6 +817,7 @@ function ThreadPanel({
   width: number
   me: string | null
   draftRef: RefObject<number>
+  hover?: HTMLAttributes<HTMLDivElement>
   onReply: (parentId: number, body: string) => Promise<void>
   onEdit: (id: number, body: string) => Promise<void>
   onToggleResolved: (id: number) => void
@@ -763,21 +827,25 @@ function ThreadPanel({
   const [body, setBody] = useState('')
   const [saving, setSaving] = useState(false)
   const replyRef = useRef<HTMLTextAreaElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
   useDraftGuard(draftRef, body)
 
   const left = popoverLeft(at.x, width)
+  const { top, up } = usePopoverTop(cardRef, at.y)
 
   return (
     <div
+      ref={cardRef}
       className="pop-in"
       style={{
         ...S.compose,
         left,
-        top: at.y + 12,
+        top,
         gap: 10,
-        transformOrigin: left > at.x ? 'top left' : 'top right',
+        transformOrigin: `${up ? 'bottom' : 'top'} ${left > at.x ? 'left' : 'right'}`,
       }}
       data-thread={thread.id}
+      {...hover}
     >
       <div style={S.threadScroll}>
         <Entry
