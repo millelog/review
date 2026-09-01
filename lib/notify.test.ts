@@ -6,8 +6,9 @@ import { join } from 'node:path'
 
 process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'review-')), 'test.db')
 const { getDb } = await import('./db.ts')
-const { createComment } = await import('./comments.ts')
+const { createComment, toggleStatus } = await import('./comments.ts')
 const { sweep } = await import('./notify.ts')
+const { addNote } = await import('./agent.ts')
 
 const db = getDb()
 const projectId = Number(
@@ -28,6 +29,7 @@ const backdate = (body: string, minutes: number) =>
   db.prepare("UPDATE comments SET created_at = datetime('now', ?) WHERE body = ?").run(`-${minutes} minutes`, body)
 const unnotified = () =>
   (db.prepare('SELECT COUNT(*) AS n FROM comments WHERE notified_at IS NULL').get() as { n: number }).n
+const fromSql = (s: string) => new Date(s.replace(' ', 'T') + 'Z')
 const recapAt = () => (db.prepare("SELECT value FROM kv WHERE key = 'recap_at'").get() as { value: string } | undefined)?.value
 
 // Fixed offsets keep these on today's LA date whether or not DST is in effect.
@@ -132,4 +134,57 @@ test('comment bodies are escaped into the HTML part', async () => {
   assert.match(mail.html, /&lt;script&gt;alert\(1\)&lt;\/script&gt; &amp; &quot;quotes&quot;/)
   assert.match(mail.html, /Mal &lt;x&gt;/)
   assert.match(mail.html, /\/&lt;img&gt;/)
+})
+
+test('replies nest under their parent, chronologically, with the element quoted', async () => {
+  db.prepare("UPDATE comments SET notified_at = datetime('now') WHERE notified_at IS NULL").run()
+  const root = createComment({
+    token: 'tok11111',
+    path: '/pricing',
+    author: 'Dana',
+    body: 'headline too long',
+    type: 'change_request',
+    element_text: 'Ship faster, review sooner',
+  })
+  createComment({ token: 'tok11111', path: '/pricing', author: 'Sam', body: 'cut to six words', parent_id: root.id })
+  addNote('acme', 'feature/x', root.id, 'shortened the headline')
+  for (const body of ['headline too long', 'cut to six words']) backdate(body, 121)
+
+  await sweep(send, morning)
+  const mail = sent.at(-1)!
+  assert.match(mail.text, /2 new comments/)
+  assert.match(mail.text, /\/pricing\n {2}"Ship faster, review sooner"\n {2}\[change request\] Dana: headline too long\n {4}↳ \[comment\] Sam: cut to six words/)
+  // The reply renders inside the indented rail that follows its root.
+  assert.match(mail.html, /Dana<\/span>.*headline too long.*border-left:2px solid #e4e4e7.*Sam<\/span>.*cut to six words/s)
+  // Agent notes are pre-notified, so the session digest never carries them.
+  assert.doesNotMatch(mail.text, /shortened the headline/)
+})
+
+test('a reply whose parent was already emailed brings the parent along as context', async () => {
+  const root = db.prepare("SELECT id FROM comments WHERE body = 'headline too long'").get() as { id: number }
+  createComment({ token: 'tok11111', path: '/pricing', author: 'Kim', body: 'and make it bold', parent_id: root.id })
+  backdate('and make it bold', 121)
+
+  await sweep(send, morning)
+  const mail = sent.at(-1)!
+  assert.match(mail.text, /1 new comment\b/, 'the context parent is not counted as new')
+  assert.match(mail.text, / {2}Dana \(earlier\): headline too long\n {4}↳ \[comment\] Kim: and make it bold/)
+  assert.match(mail.html, /&middot; earlier/)
+})
+
+test('the recap collapses agent notes into their thread and marks resolved threads', async () => {
+  const root = db.prepare("SELECT id FROM comments WHERE body = 'headline too long'").get() as { id: number }
+  toggleStatus(root.id)
+  const last = recapAt()!
+  // Pin everything in this scenario just after the last recap so the window picks it up.
+  db.prepare("UPDATE comments SET created_at = datetime(?, '+1 minute'), notified_at = datetime('now') WHERE id >= ?").run(last, root.id)
+
+  const after = new Date(fromSql(last).getTime() + 86_400_000)
+  await sweep(send, after)
+  const recap = sent.at(-1)!
+  assert.match(recap.subject, /^Feedback recap/)
+  assert.match(recap.text, / {2}\[change request\] Dana \(resolved\): headline too long/)
+  assert.match(recap.text, /↳ \[agent note\] Claude \(agent\): shortened the headline/)
+  assert.match(recap.html, /<details[^>]*><summary[^>]*>Agent note &middot; Claude \(agent\)<\/summary>/)
+  assert.match(recap.html, />Resolved</)
 })

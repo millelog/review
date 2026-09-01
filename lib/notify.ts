@@ -4,8 +4,25 @@ export type Mail = { subject: string; text: string; html: string; thread: string
 /** Sends one email; `thread` is the Message-ID replies chain onto. Swappable in tests. */
 export type Send = (mail: Mail) => Promise<void>
 
-type Row = { author: string; path: string; body: string; type: string }
+type Row = {
+  id: number
+  parent_id: number | null
+  author: string
+  path: string
+  body: string
+  type: string
+  status: string
+  internal: number
+  element_text: string
+}
 type RecapRow = Row & { name: string; branch: string; token: string }
+/** A thread root with its replies in order; `context` marks a parent pulled in from an earlier email. */
+type Node = Row & { replies: Row[]; context?: boolean }
+
+const COLS = 'id, parent_id, author, path, body, type, status, internal, element_text'
+const C_COLS = COLS.split(', ')
+  .map((c) => `c.${c}`)
+  .join(', ')
 
 const TYPE: Record<string, { label: string; fg: string; bg: string }> = {
   comment: { label: 'Comment', fg: '#3f3f46', bg: '#f4f4f5' },
@@ -15,6 +32,8 @@ const TYPE: Record<string, { label: string; fg: string; bg: string }> = {
 const LA = 'America/Los_Angeles'
 const QUIET_MINUTES = 120
 const RECAP_HOUR = 15
+const QUOTE_MAX = 80
+const CONTEXT_MAX = 140
 
 const appUrl = () => process.env.APP_URL ?? 'https://review.cascadeonline.dev'
 const host = () => new URL(appUrl()).host
@@ -24,45 +43,124 @@ const laHour = (d: Date) => Number(d.toLocaleTimeString('en-US', { timeZone: LA,
 const fromSql = (s: string) => new Date(s.replace(' ', 'T') + 'Z')
 const type = (t: string) => TYPE[t] ?? TYPE.comment
 const plural = (n: number) => `${n} new comment${n === 1 ? '' : 's'}`
+const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s)
 
 // Comment bodies, authors and paths are client input, so everything interpolated into HTML goes through this.
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-const line = (r: Row) => `  [${type(r.type).label.toLowerCase()}] ${r.author}: ${r.body.replace(/\n/g, '\n    ')}`
+/**
+ * Path-grouped threads: replies chronological under their root. A reply whose parent went out in an
+ * earlier email pulls that parent in as muted context, so the batch never opens mid-conversation.
+ */
+function group(rows: Row[]): { path: string; threads: Node[] }[] {
+  const byId = new Map<number, Node>()
+  for (const r of rows) if (r.parent_id === null) byId.set(r.id, { ...r, replies: [] })
 
-/** Groups a path-ordered run of comments under monospace path headers. */
-function commentsHtml(rows: Row[]): string {
-  let out = ''
-  let path: string | null = null
-  for (const r of rows) {
-    if (r.path !== path) {
-      if (path !== null) out += '</div>'
-      out +=
-        `<div style="margin:0 0 22px">` +
-        `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#71717a;padding-bottom:7px;border-bottom:1px solid #e4e4e7;margin-bottom:12px">${esc(r.path)}</div>`
-      path = r.path
-    }
-    const t = type(r.type)
-    out +=
-      `<div style="margin:0 0 14px">` +
-      `<div style="margin:0 0 4px"><span style="background:${t.bg};color:${t.fg};font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;padding:2px 7px;border-radius:4px">${t.label}</span>` +
-      `<span style="font-weight:600;margin-left:8px">${esc(r.author)}</span></div>` +
-      `<div style="color:#3f3f46">${esc(r.body).replace(/\n/g, '<br>')}</div>` +
-      `</div>`
+  const missing = [...new Set(rows.map((r) => r.parent_id).filter((id): id is number => id !== null && !byId.has(id)))]
+  if (missing.length) {
+    const parents = getDb()
+      .prepare(`SELECT ${COLS} FROM comments WHERE id IN (${missing.map(() => '?').join(',')})`)
+      .all(...missing) as Row[]
+    for (const p of parents) byId.set(p.id, { ...p, replies: [], context: true })
   }
-  return out + (path !== null ? '</div>' : '')
+
+  const seen = new Set<number>()
+  const threads: Node[] = []
+  for (const r of rows) {
+    const root = byId.get(r.parent_id ?? r.id)
+    if (!root) {
+      threads.push({ ...r, replies: [] }) // parent vanished (deleted): render it flat rather than drop it
+      continue
+    }
+    if (!seen.has(root.id)) {
+      seen.add(root.id)
+      threads.push(root)
+    }
+    if (r.parent_id !== null) root.replies.push(r)
+  }
+
+  const out: { path: string; threads: Node[] }[] = []
+  for (const t of threads) {
+    t.replies.sort((a, b) => a.id - b.id)
+    const last = out.at(-1)
+    if (last?.path === t.path) last.threads.push(t)
+    else out.push({ path: t.path, threads: [t] })
+  }
+  return out
+}
+
+const chip = (label: string, fg: string, bg: string) =>
+  `<span style="background:${bg};color:${fg};font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;padding:2px 7px;border-radius:4px">${label}</span>`
+
+const bodyHtml = (s: string) => esc(s).replace(/\n/g, '<br>')
+
+// ponytail: <details> is the whole collapse mechanism. Gmail strips the tag and shows the note inline —
+// acceptable, it is still muted and still inside its thread.
+const noteHtml = (r: Row) =>
+  `<details style="margin:0 0 12px">` +
+  `<summary style="cursor:pointer;color:#71717a;font-size:13px">Agent note &middot; ${esc(r.author)}</summary>` +
+  `<div style="color:#71717a;font-size:14px;margin:6px 0 0">${bodyHtml(r.body)}</div></details>`
+
+function commentHtml(r: Row, ctx = false): string {
+  if (r.internal) return noteHtml(r)
+  const t = type(r.type)
+  const head = ctx
+    ? `<span style="font-weight:600;color:#a1a1aa">${esc(r.author)}</span><span style="color:#a1a1aa;font-size:13px"> &middot; earlier</span>`
+    : chip(t.label, t.fg, t.bg) +
+      `<span style="font-weight:600;margin-left:8px">${esc(r.author)}</span>` +
+      (r.status === 'resolved' ? ` ${chip('Resolved', '#52525b', '#e4e4e7')}` : '')
+  return (
+    `<div style="margin:0 0 12px"><div style="margin:0 0 4px">${head}</div>` +
+    `<div style="color:${ctx ? '#a1a1aa' : '#3f3f46'}">${bodyHtml(ctx ? clip(r.body, CONTEXT_MAX) : r.body)}</div></div>`
+  )
+}
+
+function threadHtml(t: Node): string {
+  const quote = t.element_text.trim()
+  return (
+    `<div style="margin:0 0 24px">` +
+    (quote
+      ? `<div style="color:#a1a1aa;font-size:13px;font-style:italic;margin:0 0 6px">&ldquo;${esc(clip(quote, QUOTE_MAX))}&rdquo;</div>`
+      : '') +
+    commentHtml(t, t.context) +
+    (t.replies.length
+      ? `<div style="border-left:2px solid #e4e4e7;padding-left:14px;margin-left:4px">${t.replies.map((r) => commentHtml(r)).join('')}</div>`
+      : '') +
+    `</div>`
+  )
+}
+
+/** Threads under monospace path headers. */
+function commentsHtml(rows: Row[]): string {
+  return group(rows)
+    .map(
+      ({ path, threads }) =>
+        `<div style="margin:0 0 22px">` +
+        `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#71717a;padding-bottom:7px;border-bottom:1px solid #e4e4e7;margin-bottom:12px">${esc(path)}</div>` +
+        threads.map(threadHtml).join('') +
+        `</div>`,
+    )
+    .join('')
+}
+
+function line(r: Row, indent: string, ctx = false): string {
+  const tag = ctx ? '' : r.internal ? '[agent note] ' : `[${type(r.type).label.toLowerCase()}] `
+  const suffix = ctx ? ' (earlier)' : r.status === 'resolved' ? ' (resolved)' : ''
+  const body = ctx ? clip(r.body, CONTEXT_MAX) : r.body
+  return `${indent}${tag}${r.author}${suffix}: ${body.replace(/\n/g, `\n${' '.repeat(indent.length + 2)}`)}`
 }
 
 /** Plain-text counterpart of commentsHtml. */
 function pathBlocks(rows: Row[]): string[] {
   const out: string[] = []
-  let path: string | null = null
-  for (const r of rows) {
-    if (r.path !== path) {
-      out.push(`${path === null ? '' : '\n'}${r.path}`)
-      path = r.path
+  for (const { path, threads } of group(rows)) {
+    if (out.length) out.push('')
+    out.push(path)
+    for (const t of threads) {
+      if (t.element_text.trim()) out.push(`  "${clip(t.element_text.trim(), QUOTE_MAX)}"`)
+      out.push(line(t, '  ', t.context))
+      for (const r of t.replies) out.push(line(r, '    ↳ '))
     }
-    out.push(line(r))
   }
   return out
 }
@@ -106,10 +204,8 @@ async function sendGrid({ subject, text, html, thread }: Mail): Promise<void> {
 export async function notify(token: string, send: Send = sendGrid): Promise<boolean> {
   const db = getDb()
   const rows = db
-    .prepare(
-      'SELECT id, author, path, body, type FROM comments WHERE token = ? AND notified_at IS NULL ORDER BY path, id',
-    )
-    .all(token) as (Row & { id: number })[]
+    .prepare(`SELECT ${COLS} FROM comments WHERE token = ? AND notified_at IS NULL ORDER BY path, id`)
+    .all(token) as Row[]
   if (!rows.length) return false
   const { name, branch } = db
     .prepare('SELECT p.name, t.branch FROM tokens t JOIN projects p ON p.id = t.project_id WHERE t.token = ?')
@@ -177,7 +273,7 @@ export async function sweep(send: Send = sendGrid, now = new Date()): Promise<vo
 
   const rows = db
     .prepare(
-      `SELECT p.name, c.branch, c.token, c.path, c.author, c.body, c.type FROM comments c
+      `SELECT p.name, c.branch, c.token, ${C_COLS} FROM comments c
        JOIN projects p ON p.id = c.project_id WHERE c.created_at > ? ORDER BY p.name, c.branch, c.path, c.id`,
     )
     .all(last) as RecapRow[]
