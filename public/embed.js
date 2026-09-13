@@ -3,7 +3,7 @@
 ;(function () {
   'use strict'
 
-  var VOLATILE_DATA = /^data-(react|nextjs|n-|radix|headlessui|floating|testid-gen)/
+  var VOLATILE_DATA = /^data-(react|nextjs|n-|nimg|radix|headlessui|floating|testid-gen)/
   var IDENT = /^[A-Za-z][\w-]*$/
 
   function tagOf(el) {
@@ -21,6 +21,9 @@
   }
 
   function dataSelector(el, isUnique) {
+    // Extensions (Grammarly) and theme toggles own html/body attributes; they differ per browser.
+    var tag = tagOf(el)
+    if (tag === 'html' || tag === 'body') return null
     var attrs = el.attributes || []
     for (var i = 0; i < attrs.length; i++) {
       var name = attrs[i].name
@@ -78,8 +81,22 @@
     return parts.join(' > ')
   }
 
+  // Selector first; else the first same-tag element whose text matches (survives extension attrs, reordering).
+  function resolvePin(pin, doc) {
+    var el = null
+    try {
+      el = doc.querySelector(pin.selector)
+    } catch (e) {}
+    if (el || !pin.text) return el
+    var leaf = String(pin.selector || '').split(' > ').pop()
+    var m = /^[a-z][\w-]*/i.exec(leaf)
+    var all = doc.getElementsByTagName(m ? m[0] : '*')
+    for (var i = 0; i < all.length; i++) if (textOf(all[i]) === pin.text) return all[i]
+    return null
+  }
+
   if (typeof module === 'object' && module.exports) {
-    module.exports = { selectorFor: selectorFor, textOf: textOf }
+    module.exports = { selectorFor: selectorFor, textOf: textOf, resolvePin: resolvePin }
     return
   }
   if (window.self === window.top) return
@@ -92,6 +109,8 @@
   var commentMode = false
   var tracked = []
   var lastPath = null
+  var dirty = true // DOM changed since pins were last resolved
+  var pendingScroll = null // {selector, text, until}: a scroll-to whose target hasn't rendered yet
 
   function post(msg) {
     msg.source = 'review-embed'
@@ -106,18 +125,27 @@
     var path = currentPath()
     if (path === lastPath) return
     lastPath = path
+    pendingScroll = null
     post({ type: 'path', path: path })
+  }
+
+  function scrollInto(target) {
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }
 
   function reportPositions() {
     var positions = []
     var missing = []
+    if (pendingScroll && dirty) {
+      var found = resolvePin(pendingScroll, document)
+      if (found) scrollInto(found)
+      if (found || Date.now() > pendingScroll.until) pendingScroll = null
+    }
     for (var i = 0; i < tracked.length; i++) {
       var pin = tracked[i]
-      var el = null
-      try {
-        el = document.querySelector(pin.selector)
-      } catch (e) {}
+      // ponytail: cached element; re-resolve only after a DOM change, so scroll frames stay cheap.
+      if (dirty && (!pin.el || !pin.el.isConnected)) pin.el = resolvePin(pin, document)
+      var el = pin.el && pin.el.isConnected ? pin.el : null
       if (!el) {
         missing.push(pin.id)
         continue
@@ -129,6 +157,7 @@
         y: rect.top + (pin.offsetY || 0),
       })
     }
+    dirty = false
     post({ type: 'positions', positions: positions, missing: missing })
   }
 
@@ -173,13 +202,12 @@
       document.documentElement.style.cursor = commentMode ? 'crosshair' : ''
     } else if (msg.type === 'track') {
       tracked = msg.pins || []
+      dirty = true
       reportPositions()
     } else if (msg.type === 'scroll-to') {
-      var target = null
-      try {
-        target = document.querySelector(msg.selector)
-      } catch (e) {}
-      if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      var target = resolvePin(msg, document)
+      if (target) scrollInto(target)
+      else pendingScroll = { selector: msg.selector, text: msg.text, until: Date.now() + 10000 }
       schedulePositions()
     } else if (msg.type === 'ping') {
       lastPath = null
@@ -201,6 +229,10 @@
   window.addEventListener('scroll', schedulePositions, true)
   window.addEventListener('resize', schedulePositions)
   window.addEventListener('load', schedulePositions)
+  new MutationObserver(function () {
+    dirty = true
+    schedulePositions()
+  }).observe(document.documentElement, { childList: true, subtree: true })
 
   reportPath()
 })()

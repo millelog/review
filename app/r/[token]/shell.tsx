@@ -82,7 +82,7 @@ export default function Shell({
   const dockRef = useRef<HTMLDivElement>(null)
   const splashRef = useRef<HTMLFormElement>(null)
   const threadsRef = useRef<Thread[]>([])
-  const focusRef = useRef<string | null>(null)
+  const focusRef = useRef<{ selector: string; text: string } | null>(null)
   const embedSeenRef = useRef(false)
   const draftRef = useRef(0)
   const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -149,6 +149,7 @@ export default function Shell({
       pins: pins.map((t) => ({
         id: t.id,
         selector: t.selector,
+        text: t.element_text,
         offsetX: t.offset_x,
         offsetY: t.offset_y,
       })),
@@ -379,10 +380,10 @@ export default function Shell({
     const size = previewSize(t.viewport_width)
     if (size) setViewport(size)
     if (t.path !== path && frameRef.current) {
-      focusRef.current = t.selector // scrolled once the new page loads
+      focusRef.current = { selector: t.selector, text: t.element_text } // scrolled once the new page loads
       frameRef.current.src = previewOrigin + t.path
     } else if (t.selector) {
-      toFrame({ type: 'scroll-to', selector: t.selector })
+      toFrame({ type: 'scroll-to', selector: t.selector, text: t.element_text })
     }
     setOpenId(t.id)
   }
@@ -406,7 +407,7 @@ export default function Shell({
               setLoadSeq((n) => n + 1)
               toFrame({ type: 'ping' })
               if (focusRef.current) {
-                toFrame({ type: 'scroll-to', selector: focusRef.current })
+                toFrame({ type: 'scroll-to', ...focusRef.current })
                 focusRef.current = null
               }
             }}

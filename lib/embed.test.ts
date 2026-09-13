@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 
-const { selectorFor, textOf } = createRequire(import.meta.url)('../public/embed.js')
+const { selectorFor, textOf, resolvePin } = createRequire(import.meta.url)('../public/embed.js')
 
 type Attr = { name: string; value: string }
 type El = {
@@ -60,6 +60,12 @@ test('walks to the root when no ancestor is identifiable', () => {
   assert.equal(selectorFor(target, uniq()), 'html > body:nth-child(1) > p:nth-child(1)')
 })
 
+test('ignores html/body attributes (browser extensions and theme toggles inject them)', () => {
+  const target = el('p', {})
+  el('html', { 'data-theme': 'light' }, [el('body', { 'data-new-gr-c-s-check-loaded': '14.1325.0' }, [target])])
+  assert.equal(selectorFor(target, uniq()), 'html > body:nth-child(1) > p:nth-child(1)')
+})
+
 test('escapes quotes in data attribute values', () => {
   const node = el('div', { 'data-label': 'say "hi"' })
   assert.equal(selectorFor(node, uniq()), 'div[data-label="say \\"hi\\""]')
@@ -88,4 +94,17 @@ test('falls back to alt then aria-label', () => {
 
 test('truncates long text', () => {
   assert.equal(textOf(node({ innerText: 'x'.repeat(300) })).length, 120)
+})
+
+// resolvePin: selector first, then the same-tag element whose text matches.
+test('falls back to matching text when the selector misses', () => {
+  const hit = node({ innerText: 'The jib stays level' })
+  const doc = {
+    querySelector: () => null,
+    getElementsByTagName: (tag: string) => (tag === 'p' ? [node({ innerText: 'Other' }), hit] : []),
+  }
+  const pin = { selector: 'body[data-gone="1"] > article:nth-child(6) > p:nth-child(4)', text: 'The jib stays level' }
+  assert.equal(resolvePin(pin, doc), hit)
+  assert.equal(resolvePin({ ...pin, text: '' }, doc), null)
+  assert.equal(resolvePin({ selector: '#hero', text: 'x' }, { querySelector: () => hit, getElementsByTagName: () => [] }), hit)
 })

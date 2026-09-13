@@ -116,12 +116,23 @@ export function getDb(): Database.Database {
     } catch {}
   }
   dropTypeCheck(db)
+  rerootSelectors(db)
   instance = db
   return db
 }
 
 const COLS =
   'id, token, project_id, branch, path, parent_id, author, color, body, type, status, selector, offset_x, offset_y, viewport_width, element_text, internal, created_at, notified_at, updated_at'
+
+// Anchors rooted at html/body attributes came from browser extensions (Grammarly) or the theme toggle.
+export function rerootSelectors(db: Database.Database) {
+  db.exec(`
+    UPDATE comments SET selector = 'html > body:nth-child(2)' || substr(selector, instr(selector, ' > '))
+      WHERE selector LIKE 'body[data-%' AND instr(selector, ' > ') > 0;
+    UPDATE comments SET selector = 'html' || substr(selector, instr(selector, ' > '))
+      WHERE selector LIKE 'html[data-%' AND instr(selector, ' > ') > 0;
+  `)
+}
 
 // ponytail: type is validated in createComment, not by CHECK, so adding a type never needs another rebuild.
 function dropTypeCheck(db: Database.Database) {

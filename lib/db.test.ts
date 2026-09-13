@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 process.env.DATABASE_PATH = join(mkdtempSync(join(tmpdir(), 'review-')), 'test.db')
-const { getDb } = await import('./db.ts')
+const { getDb, rerootSelectors } = await import('./db.ts')
 
 test('insert project, token and comment, read back', () => {
   const db = getDb()
@@ -32,4 +32,23 @@ test('insert project, token and comment, read back', () => {
   const token = db.prepare('SELECT * FROM tokens WHERE token = ?').get('abcd1234') as Record<string, unknown>
   assert.equal(token.project_id, projectId)
   assert.equal(token.revoked_at, null)
+})
+
+test('reroots selectors anchored on html/body attributes', () => {
+  const db = getDb()
+  const ins = db.prepare(
+    `INSERT INTO comments (token, project_id, branch, path, author, body, type, selector) VALUES ('abcd1234', 1, 'feature/x', '/', 'Dana', 'x', 'comment', ?)`,
+  )
+  const ids = [
+    'body[data-new-gr-c-s-check-loaded="14.1325.0"] > article:nth-child(6) > p:nth-child(2)',
+    'html[data-theme="light"] > body:nth-child(2) > footer:nth-child(7)',
+    'body[data-x="1"]',
+    '#hero',
+  ].map((sel) => Number(ins.run(sel).lastInsertRowid))
+  rerootSelectors(db)
+  const sel = (id: number) => (db.prepare('SELECT selector FROM comments WHERE id = ?').get(id) as { selector: string }).selector
+  assert.equal(sel(ids[0]), 'html > body:nth-child(2) > article:nth-child(6) > p:nth-child(2)')
+  assert.equal(sel(ids[1]), 'html > body:nth-child(2) > footer:nth-child(7)')
+  assert.equal(sel(ids[2]), 'body[data-x="1"]')
+  assert.equal(sel(ids[3]), '#hero')
 })
