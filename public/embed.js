@@ -81,18 +81,26 @@
     return parts.join(' > ')
   }
 
-  // Selector first; else the first same-tag element whose text matches (survives extension attrs, reordering).
+  // ponytail: a 40-char opening survives rewording further down the paragraph; full text often doesn't.
+  function textKey(t) {
+    return String(t || '').slice(0, 40)
+  }
+
+  // Selector hit whose text still matches; else the first same-tag element opening with the stored text
+  // (survives extension attrs and re-ordered content); else whatever the selector hit.
   function resolvePin(pin, doc) {
     var el = null
     try {
       el = doc.querySelector(pin.selector)
     } catch (e) {}
-    if (el || !pin.text) return el
+    if (!pin.text) return el
+    var key = textKey(pin.text)
+    if (el && textKey(textOf(el)) === key) return el
     var leaf = String(pin.selector || '').split(' > ').pop()
     var m = /^[a-z][\w-]*/i.exec(leaf)
     var all = doc.getElementsByTagName(m ? m[0] : '*')
-    for (var i = 0; i < all.length; i++) if (textOf(all[i]) === pin.text) return all[i]
-    return null
+    for (var i = 0; i < all.length; i++) if (textKey(textOf(all[i])) === key) return all[i]
+    return el
   }
 
   if (typeof module === 'object' && module.exports) {

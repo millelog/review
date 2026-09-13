@@ -96,15 +96,17 @@ test('truncates long text', () => {
   assert.equal(textOf(node({ innerText: 'x'.repeat(300) })).length, 120)
 })
 
-// resolvePin: selector first, then the same-tag element whose text matches.
-test('falls back to matching text when the selector misses', () => {
-  const hit = node({ innerText: 'The jib stays level' })
+// resolvePin: selector hit verified by text, then text match, then the bare selector hit.
+test('prefers the element whose text matches when the selector drifted', () => {
+  const hit = node({ innerText: 'The jib stays level, so moving the hook is a matter of driving the trolley' })
+  const drifted = node({ innerText: 'Some other paragraph' })
   const doc = {
-    querySelector: () => null,
+    querySelector: () => drifted,
     getElementsByTagName: (tag: string) => (tag === 'p' ? [node({ innerText: 'Other' }), hit] : []),
   }
-  const pin = { selector: 'body[data-gone="1"] > article:nth-child(6) > p:nth-child(4)', text: 'The jib stays level' }
-  assert.equal(resolvePin(pin, doc), hit)
-  assert.equal(resolvePin({ ...pin, text: '' }, doc), null)
-  assert.equal(resolvePin({ selector: '#hero', text: 'x' }, { querySelector: () => hit, getElementsByTagName: () => [] }), hit)
+  const pin = { selector: 'body[data-gone="1"] > article:nth-child(6) > p:nth-child(4)', text: 'The jib stays level, so moving the hook is a matter of driving the trolley in or out' }
+  assert.equal(resolvePin(pin, doc), hit, 'reworded tail still matches on the opening')
+  assert.equal(resolvePin({ ...pin, text: '' }, doc), drifted, 'no text: selector hit stands')
+  assert.equal(resolvePin({ ...pin, text: 'Gone entirely' }, doc), drifted, 'no text match: selector hit is the last resort')
+  assert.equal(resolvePin({ selector: '#hero', text: 'x' }, { querySelector: () => null, getElementsByTagName: () => [] }), null)
 })
