@@ -437,11 +437,12 @@ export default function Shell({
             )}
           </div>
 
-          {openThread && positions[openThread.id] && (
+          {openThread && (
             <ThreadPanel
               key={openThread.id}
               thread={openThread}
-              at={positions[openThread.id]}
+              // an outdated thread whose element is gone still opens, parked at the top of the preview
+              at={positions[openThread.id] ?? { x: 24, y: 24 }}
               width={frameRef.current?.clientWidth || 0}
               me={name}
               draftRef={draftRef}
