@@ -96,7 +96,8 @@ test('truncates long text', () => {
   assert.equal(textOf(node({ innerText: 'x'.repeat(300) })).length, 120)
 })
 
-// resolvePin: selector hit verified by text, then text match, then the bare selector hit.
+// resolvePin: exact = selector hit verified by text or a text match; approximate = bare selector hit,
+// then the same slot under the nearest surviving ancestor.
 test('prefers the element whose text matches when the selector drifted', () => {
   const hit = node({ innerText: 'The jib stays level, so moving the hook is a matter of driving the trolley' })
   const drifted = node({ innerText: 'Some other paragraph' })
@@ -105,8 +106,21 @@ test('prefers the element whose text matches when the selector drifted', () => {
     getElementsByTagName: (tag: string) => (tag === 'p' ? [node({ innerText: 'Other' }), hit] : []),
   }
   const pin = { selector: 'body[data-gone="1"] > article:nth-child(6) > p:nth-child(4)', text: 'The jib stays level, so moving the hook is a matter of driving the trolley in or out' }
-  assert.equal(resolvePin(pin, doc), hit, 'reworded tail still matches on the opening')
-  assert.equal(resolvePin({ ...pin, text: '' }, doc), drifted, 'no text: selector hit stands')
-  assert.equal(resolvePin({ ...pin, text: 'Gone entirely' }, doc), drifted, 'no text match: selector hit is the last resort')
-  assert.equal(resolvePin({ selector: '#hero', text: 'x' }, { querySelector: () => null, getElementsByTagName: () => [] }), null)
+  assert.deepEqual(resolvePin(pin, doc), { el: hit, exact: true }, 'reworded tail still matches on the opening')
+  assert.deepEqual(resolvePin({ ...pin, text: '' }, doc), { el: drifted, exact: true }, 'no text: selector hit stands')
+  assert.deepEqual(resolvePin({ ...pin, text: 'Gone entirely' }, doc), { el: drifted, exact: false }, 'copy edited: selector hit, flagged')
+})
+
+test('falls back to the same slot in the nearest surviving ancestor when the element is gone', () => {
+  const kids = [node({ innerText: 'a' }), node({ innerText: 'b' }), node({ innerText: 'c' })]
+  const container = { ...node({ innerText: 'abc' }), children: kids }
+  const doc = {
+    querySelector: (sel: string) => (sel === 'html > body:nth-child(2) > div:nth-child(2)' ? container : null),
+    getElementsByTagName: () => [],
+  }
+  const at = (sel: string) => resolvePin({ selector: sel, text: 'Removed quote' }, doc)
+  assert.deepEqual(at('html > body:nth-child(2) > div:nth-child(2) > aside:nth-child(2)'), { el: kids[1], exact: false })
+  assert.deepEqual(at('html > body:nth-child(2) > div:nth-child(2) > aside:nth-child(37)'), { el: kids[2], exact: false }, 'clamps to the last child')
+  assert.deepEqual(at('html > body:nth-child(2) > div:nth-child(2) > ul:nth-child(1) > li:nth-child(9)'), { el: kids[0], exact: false }, 'skips missing intermediate ancestors')
+  assert.deepEqual(at('#hero'), { el: null, exact: false })
 })
