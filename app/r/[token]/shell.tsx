@@ -167,6 +167,11 @@ export default function Shell({
       setStalled(false)
       if (msg.type === 'path') {
         setPath(msg.path)
+        // Mirror the framed page into ?path= so a refresh or copied link reopens it (read by startUrl).
+        const here = new URL(window.location.href)
+        if (msg.path === '/') here.searchParams.delete('path')
+        else here.searchParams.set('path', msg.path)
+        history.replaceState(history.state, '', here)
         if (!draftRef.current) setPending(null)
         setHoverId(null)
         setOpenId((id) =>
