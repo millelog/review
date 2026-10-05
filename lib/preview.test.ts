@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { slugBranch, previewUrl, previewSize } from './preview.ts'
+import { slugBranch, previewUrl, previewSize, startUrl } from './preview.ts'
 
 test('previewSize buckets the recorded width', () => {
   assert.equal(previewSize(0), null)
@@ -21,4 +21,13 @@ test('previewUrl builds the branch alias', () => {
     previewUrl('acme-site', 'feature/x', 'cascade'),
     'https://acme-site-git-feature-x-cascade.vercel.app',
   )
+})
+
+test('startUrl opens a page on the preview, never another origin', () => {
+  const base = 'https://acme-site-git-main-cascade.vercel.app'
+  assert.equal(startUrl(base, undefined), base)
+  assert.equal(startUrl(base, '/dining?town=x#map'), `${base}/dining?town=x#map`)
+  assert.equal(startUrl(base, '//evil.com/x'), base)
+  assert.equal(startUrl(base, 'https://evil.com'), base)
+  assert.equal(startUrl(base, ['/a', '/b']), base)
 })

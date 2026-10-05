@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { getTokenContext } from '@/lib/db'
-import { previewUrl } from '@/lib/preview'
+import { previewUrl, startUrl } from '@/lib/preview'
 import { LOGO } from '@/lib/brand'
 import Shell from './shell'
 
@@ -20,8 +20,15 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
   }
 }
 
-export default async function ReviewPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function ReviewPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ token: string }>
+  searchParams: Promise<{ path?: string | string[] }>
+}) {
   const { token } = await params
+  const { path } = await searchParams
   const ctx = getTokenContext(token)
   if (!ctx) notFound()
 
@@ -31,7 +38,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ token: 
       project={ctx.name}
       branch={ctx.branch}
       // ponytail: PREVIEW_OVERRIDE points the iframe at a local fake site for browser tests.
-      src={process.env.PREVIEW_OVERRIDE ?? previewUrl(ctx.vercel_project, ctx.branch, ctx.vercel_team)}
+      src={startUrl(process.env.PREVIEW_OVERRIDE ?? previewUrl(ctx.vercel_project, ctx.branch, ctx.vercel_team), path)}
     />
   )
 }

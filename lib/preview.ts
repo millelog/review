@@ -18,3 +18,10 @@ export function previewSize(width: number): 'mobile' | 'tablet' | 'desktop' | nu
 export function previewUrl(vercelProject: string, branch: string, vercelTeam: string): string {
   return `https://${vercelProject}-git-${slugBranch(branch)}-${vercelTeam}.vercel.app`
 }
+
+/** The preview URL opened at `?path=` from a review link; anything off the preview's origin falls back to its home page. */
+export function startUrl(base: string, path: unknown): string {
+  if (typeof path !== 'string' || !path.startsWith('/')) return base
+  const url = new URL(path, base)
+  return url.origin === new URL(base).origin ? url.href : base
+}
