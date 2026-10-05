@@ -23,9 +23,9 @@ const TYPE_COLOR: Record<CommentType, string> = { comment: '', change_request: '
 const NAME_KEY = 'review:name'
 const COLOR_KEY = 'review:color'
 
-// Device sizes in CSS px; desktop fills the stage but is never narrower than 1280.
+// Device sizes in CSS px; desktop fills the stage but is never narrower than 1280 (and 800 tall once scaled).
 const VIEWPORTS = {
-  desktop: { width: 1280, height: Infinity },
+  desktop: { width: 1280, height: 800 },
   tablet: { width: 768, height: 1024 },
   mobile: { width: 390, height: 844 },
 } as const
@@ -38,7 +38,8 @@ function frameBoxSize(v: Viewport, stage: { w: number; h: number }) {
   const scale = Math.min(1, stage.w / width)
   return {
     width,
-    height: Math.min(VIEWPORTS[v].height, stage.h / scale),
+    // scaled desktop stays landscape: filling a phone's height at 1280 wide is a layer big enough to crash iOS Safari
+    height: v === 'desktop' && scale === 1 ? stage.h : Math.min(VIEWPORTS[v].height, stage.h / scale),
     flexShrink: 0,
     transform: scale < 1 ? `scale(${scale})` : undefined,
     transformOrigin: 'top center',
@@ -141,6 +142,7 @@ export default function Shell({
   useEffect(() => {
     const el = stageRef.current
     if (!el) return
+    if (el.clientWidth < VIEWPORTS.tablet.width) setViewport('mobile') // phones open on the view that fits
     const ro = new ResizeObserver(() => setStage({ w: el.clientWidth, h: el.clientHeight }))
     ro.observe(el)
     return () => ro.disconnect()
