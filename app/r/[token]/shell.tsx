@@ -23,12 +23,27 @@ const TYPE_COLOR: Record<CommentType, string> = { comment: '', change_request: '
 const NAME_KEY = 'review:name'
 const COLOR_KEY = 'review:color'
 
+// Device sizes in CSS px; desktop fills the stage but is never narrower than 1280.
 const VIEWPORTS = {
-  desktop: { width: '100%', height: '100%' },
-  tablet: { width: 768, height: 'min(1024px, 100%)' },
-  mobile: { width: 390, height: 'min(844px, 100%)' },
+  desktop: { width: 1280, height: Infinity },
+  tablet: { width: 768, height: 1024 },
+  mobile: { width: 390, height: 844 },
 } as const
 type Viewport = keyof typeof VIEWPORTS
+
+/** Renders the preview at the device's real width, scaled down to fit a smaller stage (a phone viewing desktop). */
+function frameBoxSize(v: Viewport, stage: { w: number; h: number }) {
+  if (!stage.w) return { width: '100%', height: '100%' } // before the first measure
+  const width = v === 'desktop' ? Math.max(stage.w, VIEWPORTS.desktop.width) : VIEWPORTS[v].width
+  const scale = Math.min(1, stage.w / width)
+  return {
+    width,
+    height: Math.min(VIEWPORTS[v].height, stage.h / scale),
+    flexShrink: 0,
+    transform: scale < 1 ? `scale(${scale})` : undefined,
+    transformOrigin: 'top center',
+  }
+}
 
 type Pending = {
   x: number
@@ -78,6 +93,8 @@ export default function Shell({
   const [dockAnim, setDockAnim] = useState<'min' | 'max' | null>(null)
   const [stalled, setStalled] = useState(false)
   const frameRef = useRef<HTMLIFrameElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [stage, setStage] = useState({ w: 0, h: 0 })
   const cardRef = useRef<HTMLDivElement>(null)
   const dockRef = useRef<HTMLDivElement>(null)
   const splashRef = useRef<HTMLFormElement>(null)
@@ -119,6 +136,14 @@ export default function Shell({
     setName(localStorage.getItem(NAME_KEY))
     setColor(localStorage.getItem(COLOR_KEY) ?? '')
     setReady(true)
+  }, [])
+
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setStage({ w: el.clientWidth, h: el.clientHeight }))
+    ro.observe(el)
+    return () => ro.disconnect()
   }, [])
 
   const load = useCallback(async () => {
@@ -395,8 +420,8 @@ export default function Shell({
 
   return (
     <div style={S.page}>
-      <div style={S.stage}>
-        <div style={{ ...S.frameBox, ...VIEWPORTS[viewport], ...S.frameShadow(viewport) }}>
+      <div ref={stageRef} style={S.stage}>
+        <div style={{ ...S.frameBox, ...frameBoxSize(viewport, stage), ...S.frameShadow(viewport) }}>
           <iframe
             ref={frameRef}
             /* Without this a previewed page can't go fullscreen — requestFullscreen()
@@ -1290,7 +1315,7 @@ const S = {
     position: 'relative',
     overflow: 'hidden',
   },
-  frameBox: { position: 'relative', maxWidth: '100%' },
+  frameBox: { position: 'relative' },
   frameShadow: (v: Viewport) => ({
     boxShadow:
       v === 'desktop' ? 'none' : '0 0 0 1px rgba(255,255,255,.08), 0 30px 80px rgba(0,0,0,.5)',
