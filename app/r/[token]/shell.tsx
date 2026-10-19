@@ -1707,6 +1707,10 @@ const S = {
     transition: 'transform 300ms var(--ease-out-expo)',
   }),
   sidebarHead: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 1,
+    background: DARK,
     display: 'flex',
     alignItems: 'center',
     gap: 8,
