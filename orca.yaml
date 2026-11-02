@@ -1,0 +1,13 @@
+setupAgentStartupPolicy: wait-for-setup
+scripts:
+  setup: |
+    set -e
+    cd "$ORCA_WORKTREE_PATH"
+    # gitignored secrets and the dev SQLite db live only in the main checkout; symlink so every worktree sees them
+    for f in .env data; do
+      [ -e "$ORCA_ROOT_PATH/$f" ] && [ ! -e "$f" ] && ln -s "$ORCA_ROOT_PATH/$f" "$f"
+    done
+    # ponytail: hashed port per workspace, 1-in-500 collision; load with `set -a; . ./.env.ports; set +a`
+    printf 'PORT=%s\n' "$(( 4000 + $(printf %s "$ORCA_WORKSPACE_NAME" | cksum | cut -d' ' -f1) % 500 * 10 ))" > .env.ports
+    command -v pnpm >/dev/null || { eval "$("$HOME/.local/share/fnm/fnm" env --shell bash)"; PATH="$HOME/.local/share/pnpm:$PATH"; }
+    pnpm install --frozen-lockfile
